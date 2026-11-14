@@ -26,10 +26,10 @@ jobs:
         run: npm test
 
       - name: Run deterministic verification on root workspace
-        run: node bin/agy-factory.js verify --require-tests
+        run: node bin/agy-factory.js verify --require-tests --github-summary
 
       - name: Run deterministic verification on Task Tracker example
-        run: node bin/agy-factory.js verify --cwd examples/task-tracker --require-tests
+        run: node bin/agy-factory.js verify --cwd examples/task-tracker --require-tests --github-summary
 
       - name: Run security & diff audit across repository
-        run: node bin/agy-factory.js audit-diff --all
+        run: node bin/agy-factory.js audit-diff --all --github-summary

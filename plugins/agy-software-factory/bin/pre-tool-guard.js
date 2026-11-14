@@ -426,28 +426,164 @@ function inspectCommandLine(commandLine) {
   return { decision: "allow" };
 }
 
-export function evaluatePreToolUse(payload) {
+function globToRegExp(globPattern) {
+  let regexStr = "^";
+  for (let i = 0; i < globPattern.length; i += 1) {
+    const ch = globPattern[i];
+    if (ch === "*") {
+      if (globPattern[i + 1] === "*") {
+        regexStr += ".*";
+        i += 1;
+      } else {
+        regexStr += "[^/]*";
+      }
+    } else if (ch === "?") {
+      regexStr += "[^/]";
+    } else if ("\\.[]{}()+-^$|".includes(ch)) {
+      regexStr += `\\${ch}`;
+    } else {
+      regexStr += ch;
+    }
+  }
+  regexStr += "$";
+  return new RegExp(regexStr);
+}
+
+function matchesSlicePattern(relPath, allowedPatterns) {
+  const normFile = relPath.replace(/\\/g, "/").replace(/^\.\//, "");
+  for (const rawPattern of allowedPatterns) {
+    const pat = String(rawPattern).trim().replace(/\\/g, "/").replace(/^\.\//, "");
+    if (!pat) continue;
+    if (pat === "." || pat === "*" || pat === "**") return true;
+    if (pat.endsWith("/**") || pat.endsWith("/*")) {
+      const prefix = pat.replace(/\/\*+$/, "").replace(/\/+$/, "");
+      if (normFile === prefix || normFile.startsWith(`${prefix}/`)) return true;
+    }
+    if (pat.includes("*") || pat.includes("?")) {
+      if (globToRegExp(pat).test(normFile)) return true;
+      continue;
+    }
+    const cleanPrefix = pat.replace(/\/+$/, "");
+    if (normFile === cleanPrefix || normFile.startsWith(`${cleanPrefix}/`)) return true;
+  }
+  return false;
+}
+
+function inspectSliceOwnership(rawPath, workspaceRoot, sliceName) {
+  if (!sliceName || !rawPath || typeof rawPath !== "string") {
+    return { decision: "allow" };
+  }
+  const resolvedRoot = path.resolve(workspaceRoot || process.cwd());
+  let specPath = path.join(resolvedRoot, ".factory", "spec.json");
+  if (!fs.existsSync(specPath)) {
+    specPath = path.join(resolvedRoot, "factory-spec.json");
+  }
+  if (!fs.existsSync(specPath)) {
+    return { decision: "allow" };
+  }
+
+  let spec;
+  try {
+    spec = JSON.parse(fs.readFileSync(specPath, "utf8"));
+  } catch {
+    return { decision: "allow" };
+  }
+
+  const sliceDef = spec?.slices?.[sliceName];
+  if (!sliceDef || !sliceDef.allowPaths) {
+    return { decision: "allow" };
+  }
+
+  const allowList = Array.isArray(sliceDef.allowPaths)
+    ? sliceDef.allowPaths
+    : String(sliceDef.allowPaths).split(",");
+
+  const absTarget = path.isAbsolute(rawPath)
+    ? path.resolve(rawPath)
+    : path.resolve(resolvedRoot, rawPath);
+
+  if (
+    absTarget !== resolvedRoot &&
+    !absTarget.startsWith(`${resolvedRoot}${path.sep}`)
+  ) {
+    return { decision: "allow" };
+  }
+
+  const relPath = path.relative(resolvedRoot, absTarget).split(path.sep).join("/");
+  if (!matchesSlicePattern(relPath, allowList)) {
+    return {
+      decision: "deny",
+      reason: `Blocked out-of-slice edit to "${relPath}" for active slice "${sliceName}" (allowed: ${allowList.join(", ")}).`,
+    };
+  }
+
+  return { decision: "allow" };
+}
+
+export function evaluatePreToolUse(payload, { env = process.env } = {}) {
   try {
     if (!payload || typeof payload !== "object") {
       return { decision: "allow" };
     }
 
-    const toolCall = payload.toolCall;
-    if (!toolCall || typeof toolCall !== "object") {
+    // Support Antigravity (toolCall.name / toolCall.args), Claude Code (tool_name / tool_input), and Gemini CLI
+    const toolCall =
+      payload.toolCall && typeof payload.toolCall === "object"
+        ? payload.toolCall
+        : null;
+    const toolName = String(
+      toolCall?.name ?? payload.tool_name ?? payload.toolName ?? ""
+    );
+    const args =
+      (toolCall?.args && typeof toolCall.args === "object"
+        ? toolCall.args
+        : null) ||
+      (payload.tool_input && typeof payload.tool_input === "object"
+        ? payload.tool_input
+        : null) ||
+      {};
+
+    const isFileWriteTool =
+      toolName === "write_file" ||
+      toolName === "edit_file" ||
+      toolName === "Write" ||
+      toolName === "Edit" ||
+      toolName === "MultiEdit" ||
+      toolName === "replace";
+
+    if (isFileWriteTool) {
+      const targetPath =
+        args.Path ??
+        args.TargetFile ??
+        args.path ??
+        args.targetFile ??
+        args.file_path ??
+        args.filePath ??
+        "";
+      const fileDecision = inspectFileTarget(targetPath);
+      if (fileDecision.decision !== "allow") {
+        return fileDecision;
+      }
+
+      const activeSlice = env?.FACTORY_SLICE || payload.slice || null;
+      if (activeSlice) {
+        const workspaceRoot =
+          (Array.isArray(payload.workspacePaths) && payload.workspacePaths[0]) ||
+          payload.workspaceRoot ||
+          payload.cwd ||
+          process.cwd();
+        return inspectSliceOwnership(targetPath, workspaceRoot, activeSlice);
+      }
+
       return { decision: "allow" };
     }
 
-    const toolName = String(toolCall.name ?? "");
-    const args =
-      toolCall.args && typeof toolCall.args === "object" ? toolCall.args : {};
+    const isCommandTool =
+      toolName === "run_command" ||
+      toolName === "Bash" ||
+      toolName === "run_shell_command";
 
-    if (toolName === "write_file" || toolName === "edit_file") {
-      const targetPath =
-        args.Path ?? args.TargetFile ?? args.path ?? args.targetFile ?? "";
-      return inspectFileTarget(targetPath);
-    }
-
-    if (toolName === "run_command") {
+    if (isCommandTool) {
       const commandLine =
         args.CommandLine ?? args.commandLine ?? args.command ?? "";
       return inspectCommandLine(commandLine);

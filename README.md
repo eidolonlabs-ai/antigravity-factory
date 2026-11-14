@@ -138,12 +138,38 @@ Executes deterministic verification checks across the target repository and writ
 node bin/agy-factory.js verify [--cwd <dir>] [--require-tests] [--skip-docker] [--json]
 ```
 
+### `agy-factory plan`
+
+Scaffolds or validates a declarative slice ownership manifest (`.factory/spec.json`) so slice boundaries are machine-checked both during `PreToolUse` (`FACTORY_SLICE=<name>`) and at `audit-diff` / `land` time.
+
+```bash
+node bin/agy-factory.js plan [--cwd <dir>] [--init] [--slice <name>] [--json]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--init` | Scaffold a starter `.factory/spec.json` auto-populated from detected workspace components. |
+| `--slice <name>` | Inspect a single slice's `allowPaths`, `verifyCommand`, and `description`. |
+| `--json` | Emit structured JSON (`{ ok, valid, errors, slices, spec }`). |
+
+---
+
+### `agy-factory verify`
+
+Executes deterministic QA checks across the workspace and writes a signed verification receipt to `<cwd>/.factory/verify-receipt.json`.
+
+```bash
+node bin/agy-factory.js verify [--cwd <dir>] [--require-tests] [--skip-docker] [--format text|json|markdown] [--github-summary]
+```
+
 | Flag | Description |
 | :--- | :--- |
 | `--cwd <dir>` | Target workspace directory (defaults to `process.cwd()`). |
-| `--require-tests` | Fail verification (`ok: false`, exit `1`) if zero component `test` checks achieve `PASS`. |
+| `--require-tests` | Fail verification (`ok: false`, exit `1`) if zero component `test` checks achieve `PASS` (also honored via `.factory.json` `"requireTests": true`). |
 | `--skip-docker` | Mark `docker-compose` validation as `NOT_RUN` instead of invoking `docker compose config`. |
-| `--json` | Emit the full `.factory/verify-receipt.json` object to stdout as JSON. |
+| `--format <fmt>` | Output format: `text` (default), `json`, or `markdown` (GFM summary table). |
+| `--github-summary` | Append a Markdown verification table directly to `$GITHUB_STEP_SUMMARY` in GitHub Actions. |
+| `--json` | Shorthand for `--format json`. |
 
 **Check Categories & Status Semantics:**
 - `hygiene`: Verifies `.env` is ignored by `.gitignore` when present and no `.env` or private key files (`*.pem`, `id_rsa`) are tracked by git.
@@ -159,7 +185,7 @@ node bin/agy-factory.js verify [--cwd <dir>] [--require-tests] [--skip-docker] [
 Scans modified and untracked text files (or all repository files) for high-risk security anti-patterns with exact `file:line` precision.
 
 ```bash
-node bin/agy-factory.js audit-diff [--cwd <dir>] [--base <git-ref>] [--allow-paths <list>] [--all] [--json]
+node bin/agy-factory.js audit-diff [--cwd <dir>] [--base <git-ref>] [--allow-paths <list>] [--slice <name>] [--all] [--format text|json|markdown|sarif] [--github-summary]
 ```
 
 | Flag | Description |
@@ -167,8 +193,11 @@ node bin/agy-factory.js audit-diff [--cwd <dir>] [--base <git-ref>] [--allow-pat
 | `--cwd <dir>` | Target workspace directory (defaults to `process.cwd()`). |
 | `--base <git-ref>` | Include files changed relative to `<git-ref>` (`git diff --name-only <base>`) in addition to uncommitted status. |
 | `--allow-paths <list>` | Comma-separated owned file/directory prefixes or globs (e.g., `"api/**,db/init.sql"`). Any changed file outside this set triggers a `high`-severity `slice-boundary-violation`. |
+| `--slice <name>` | Look up `allowPaths` for `<name>` directly from `.factory/spec.json`. |
 | `--all` | Scan all non-ignored text files in `<cwd>` rather than only changed/untracked files. |
-| `--json` | Emit structured JSON (`{ cwd, status, filesScanned, findings }`). |
+| `--format <fmt>` | Output format: `text` (default), `json`, `markdown`, or `sarif` (SARIF v2.1.0 for GitHub Code Scanning). |
+| `--github-summary` | Append a Markdown audit report directly to `$GITHUB_STEP_SUMMARY` in GitHub Actions. |
+| `--json` | Shorthand for `--format json`. |
 
 **Built-In Rules:**
 - `slice-boundary-violation` (`high`): Modified or untracked file outside `--allow-paths <list>` when validating slice ownership.
@@ -185,19 +214,45 @@ node bin/agy-factory.js audit-diff [--cwd <dir>] [--base <git-ref>] [--allow-pat
 
 ---
 
-### `agy-factory init`
+### `agy-factory land`
 
-Installs and configures `agy-software-factory` into another repository.
+Audits an isolated worker `git worktree` against its assigned slice ownership (`--allow-paths` or `--slice`) and security rules, then lands only the verified owned files into the coordinator workspace.
 
 ```bash
-node bin/agy-factory.js init [targetDir] [--mode link|copy] [--json]
+node bin/agy-factory.js land --worktree <dir> [--cwd <dir>] [--slice <name> | --allow-paths <list>] [--dry-run] [--force] [--json]
+```
+
+---
+
+### `agy-factory twin`
+
+Starts a zero-dependency **Digital Twin Universe (DTU)** behavioral HTTP mock & replay server (`node:http` + `node:crypto` HMAC webhook signing) for offline integration testing.
+
+```bash
+node bin/agy-factory.js twin [--routes <routes.json>] [--port <port>] [--json]
+```
+
+Control endpoints exposed by every Digital Twin server (`createTwinServer`):
+- `GET /__twin/health`: Returns `{ ok: true, requestsCount }`.
+- `GET /__twin/requests`: Returns all recorded requests (`method`, `path`, `query`, `headers`, `body`, `timestamp`).
+- `POST /__twin/reset`: Clears recorded requests and resets stateful twin storage.
+
+---
+
+### `agy-factory init`
+
+Installs and configures `agy-software-factory` into another repository across Antigravity, Claude Code, Gemini CLI, and Codex / Git hooks.
+
+```bash
+node bin/agy-factory.js init [targetDir] [--mode link|copy] [--target agy|claude|gemini|codex|all] [--json]
 ```
 
 | Flag | Description |
 | :--- | :--- |
 | `targetDir` | Destination repository path (positional, defaults to `process.cwd()`). |
 | `--mode <link\|copy>` | `link` (default) points `<targetDir>/.agents/plugins.json` at this repo's `plugins/` folder; `copy` vendors a standalone copy into `<targetDir>/.agents/plugins/agy-software-factory`. |
-| `--json` | Print installation paths as JSON (`{ targetDir, mode, pluginsJsonPath, factoryConfigPath }`). |
+| `--target <targets>` | Agent harness target(s): `agy` (default), `claude` (`.claude/settings.json` + `CLAUDE.md`), `gemini` (`.gemini/settings.json`), `codex` (`.git/hooks/pre-commit`), or `all`. |
+| `--json` | Print installation paths as JSON. |
 
 `init` also creates `<targetDir>/.factory.json` (`{ "enforceStopVerify": false, "requireTests": true }`) if missing and ensures `.factory/` is listed in `<targetDir>/.gitignore`.
 - **Exit code**: `0` on success, `1` on invalid mode or filesystem error.

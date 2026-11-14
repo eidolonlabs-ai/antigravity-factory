@@ -9,6 +9,14 @@ import { detectProject } from '../plugins/agy-software-factory/lib/detect.js';
 import { runVerify } from '../plugins/agy-software-factory/lib/verify.js';
 import { runAuditDiff } from '../plugins/agy-software-factory/lib/audit-diff.js';
 import { runInit } from '../plugins/agy-software-factory/lib/init.js';
+import { runPlan, validateFactorySpec } from '../plugins/agy-software-factory/lib/spec.js';
+import { runLand } from '../plugins/agy-software-factory/lib/land.js';
+import {
+  createTwinServer,
+  signWebhookPayload,
+  verifyWebhookSignature,
+} from '../plugins/agy-software-factory/lib/twin.js';
+import { runCli } from '../plugins/agy-software-factory/bin/agy-factory.js';
 import { evaluatePreToolUse } from '../plugins/agy-software-factory/bin/pre-tool-guard.js';
 import { evaluateStop } from '../plugins/agy-software-factory/bin/stop-verify-gate.js';
 
@@ -506,5 +514,289 @@ test('E2E Pipeline App 4: Monorepo libs/* and modules/* discovery', () => {
     const relPaths = project.components.map((c) => c.relPath);
     assert.ok(relPaths.includes('libs/math'));
     assert.ok(relPaths.includes('modules/auth'));
+  });
+});
+
+test('E2E Pipeline App 5: Declarative Slice Manifest (.factory/spec.json), PreToolUse FACTORY_SLICE enforcement, and Worktree Landing (agy-factory land)', () => {
+  withTempDir('agy-e2e-spec-land-', (tempDir) => {
+    initGitRepo(tempDir);
+
+    const apiDir = path.join(tempDir, 'api');
+    const webDir = path.join(tempDir, 'web');
+    fs.mkdirSync(apiDir, { recursive: true });
+    fs.mkdirSync(webDir, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(apiDir, 'package.json'),
+      JSON.stringify({ name: 'api', scripts: { test: 'node -e "process.exit(0)"' } }),
+      'utf8'
+    );
+    fs.writeFileSync(path.join(apiDir, 'server.js'), 'export const v = 1;\n', 'utf8');
+    fs.writeFileSync(path.join(apiDir, 'old.js'), 'export const old = true;\n', 'utf8');
+    fs.writeFileSync(
+      path.join(webDir, 'package.json'),
+      JSON.stringify({ name: 'web', scripts: { build: 'node -e "process.exit(0)"' } }),
+      'utf8'
+    );
+    fs.writeFileSync(path.join(webDir, 'app.js'), 'export const ui = 1;\n', 'utf8');
+
+    execFileSync('git', ['add', '.'], { cwd: tempDir, stdio: 'ignore' });
+    execFileSync('git', ['commit', '-m', 'Initial api + web'], {
+      cwd: tempDir,
+      stdio: 'ignore',
+    });
+
+    // 1. Scaffold and validate .factory/spec.json via runPlan({ init: true })
+    const planRes = runPlan({ cwd: tempDir, init: true });
+    assert.equal(planRes.ok, true);
+    assert.equal(planRes.valid, true);
+    assert.deepEqual(planRes.slices.sort(), ['api', 'web']);
+
+    // Verify overlapping slice validation catches conflicts
+    const overlapCheck = validateFactorySpec({
+      slices: {
+        api: { allowPaths: ['api/**'] },
+        routes: { allowPaths: ['api/routes/**'] },
+      },
+    });
+    assert.equal(overlapCheck.valid, false);
+    assert.ok(overlapCheck.errors[0].includes('Overlapping slice ownership'));
+
+    // 2. Verify PreToolUse blocks out-of-slice writes when FACTORY_SLICE=api is active
+    const allowedSliceWrite = evaluatePreToolUse(
+      {
+        workspacePaths: [tempDir],
+        toolCall: {
+          name: 'write_file',
+          args: { Path: path.join(tempDir, 'api', 'new-route.js') },
+        },
+      },
+      { env: { ...process.env, FACTORY_SLICE: 'api' } }
+    );
+    assert.equal(allowedSliceWrite.decision, 'allow');
+
+    const blockedSliceWrite = evaluatePreToolUse(
+      {
+        workspacePaths: [tempDir],
+        toolCall: {
+          name: 'edit_file',
+          args: { Path: path.join(tempDir, 'web', 'app.js') },
+        },
+      },
+      { env: { ...process.env, FACTORY_SLICE: 'api' } }
+    );
+    assert.equal(blockedSliceWrite.decision, 'deny');
+    assert.ok(blockedSliceWrite.reason.includes('out-of-slice'));
+
+    // 3. Test automated worktree landing (runLand)
+    const wtApi = path.join(tempDir, '..', `wt-land-api-${Date.now()}`);
+    try {
+      execFileSync('git', ['worktree', 'add', '-b', 'slice-land-api', wtApi], {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+
+      // Modify api/server.js, delete api/old.js, and touch out-of-slice web/app.js
+      fs.writeFileSync(path.join(wtApi, 'api', 'server.js'), 'export const v = 2;\n', 'utf8');
+      fs.rmSync(path.join(wtApi, 'api', 'old.js'));
+      fs.appendFileSync(path.join(wtApi, 'web', 'app.js'), '// out of slice\n', 'utf8');
+
+      // Landing must block while out-of-slice edit exists
+      const blockedLand = runLand({
+        cwd: tempDir,
+        worktree: wtApi,
+        slice: 'api',
+      });
+      assert.equal(blockedLand.ok, false);
+      assert.equal(fs.readFileSync(path.join(apiDir, 'server.js'), 'utf8'), 'export const v = 1;\n');
+
+      // Revert out-of-slice file in worktree
+      execFileSync('git', ['checkout', '--', 'web/app.js'], {
+        cwd: wtApi,
+        stdio: 'ignore',
+      });
+
+      // Dry-run land previews without writing
+      const dryLand = runLand({
+        cwd: tempDir,
+        worktree: wtApi,
+        slice: 'api',
+        dryRun: true,
+      });
+      assert.equal(dryLand.ok, true);
+      assert.deepEqual(dryLand.landedFiles, ['api/server.js']);
+      assert.deepEqual(dryLand.deletedFiles, ['api/old.js']);
+      assert.equal(fs.readFileSync(path.join(apiDir, 'server.js'), 'utf8'), 'export const v = 1;\n');
+      assert.ok(fs.existsSync(path.join(apiDir, 'old.js')));
+
+      // Real land applies modified and deleted files cleanly
+      const realLand = runLand({
+        cwd: tempDir,
+        worktree: wtApi,
+        slice: 'api',
+      });
+      assert.equal(realLand.ok, true);
+      assert.equal(fs.readFileSync(path.join(apiDir, 'server.js'), 'utf8'), 'export const v = 2;\n');
+      assert.ok(!fs.existsSync(path.join(apiDir, 'old.js')));
+    } finally {
+      execFileSync('git', ['worktree', 'remove', '--force', wtApi], {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+    }
+  });
+});
+
+test('E2E Pipeline App 6: Digital Twin Universe (DTU) behavioral HTTP mock, stateful routes, and HMAC webhook verification', async () => {
+  const twin = createTwinServer({
+    initialState: { charges: [] },
+    routes: [
+      {
+        method: 'POST',
+        path: '/v1/charges',
+        handler: (req, state) => {
+          const charge = {
+            id: `ch_${state.charges.length + 1}`,
+            amount: req.body?.amount ?? 0,
+            currency: req.body?.currency ?? 'usd',
+          };
+          state.charges.push(charge);
+          return { status: 201, body: charge };
+        },
+      },
+      {
+        method: 'GET',
+        path: '/v1/charges/:id',
+        handler: (req, state) => {
+          const found = state.charges.find((c) => c.id === req.params.id);
+          if (!found) return { status: 404, body: { error: 'not_found' } };
+          return { status: 200, body: found };
+        },
+      },
+    ],
+  });
+
+  const started = await twin.listen(0);
+  try {
+    const createRes = await fetch(`${started.url}/v1/charges`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ amount: 4200, currency: 'usd' }),
+    });
+    assert.equal(createRes.status, 201);
+    const created = await createRes.json();
+    assert.equal(created.id, 'ch_1');
+    assert.equal(created.amount, 4200);
+
+    const getRes = await fetch(`${started.url}/v1/charges/ch_1`);
+    assert.equal(getRes.status, 200);
+    const fetched = await getRes.json();
+    assert.equal(fetched.amount, 4200);
+
+    const reqsRes = await fetch(`${started.url}/__twin/requests`);
+    const { requests } = await reqsRes.json();
+    assert.equal(requests.length, 2);
+
+    // Webhook signature verification helper
+    const payload = JSON.stringify({ event: 'charge.succeeded', data: created });
+    const sig = signWebhookPayload(payload, 'whsec_test_secret');
+    assert.equal(verifyWebhookSignature(payload, sig, 'whsec_test_secret'), true);
+    assert.equal(verifyWebhookSignature(payload, sig, 'wrong_secret'), false);
+
+    // Reset state
+    await fetch(`${started.url}/__twin/reset`, { method: 'POST' });
+    assert.equal(started.getRequests().length, 0);
+  } finally {
+    await started.close();
+  }
+});
+
+test('E2E Pipeline App 7: Cross-Agent Portability (init --target all), Claude/Gemini Hook Payloads, and Markdown/SARIF output', () => {
+  withTempDir('agy-e2e-multi-agent-', (tempDir) => {
+    initGitRepo(tempDir);
+
+    const initRes = runInit({
+      cwd: tempDir,
+      mode: 'copy',
+      target: 'all',
+    });
+
+    assert.ok(fs.existsSync(initRes.pluginsJsonPath));
+    assert.ok(fs.existsSync(initRes.claudeSettingsPath));
+    assert.ok(fs.existsSync(path.join(tempDir, 'CLAUDE.md')));
+    assert.ok(fs.existsSync(initRes.geminiSettingsPath));
+    assert.ok(fs.existsSync(initRes.gitPreCommitPath));
+
+    // Verify Claude Code payload compatibility in PreToolUse & Stop hooks
+    assert.equal(
+      evaluatePreToolUse({
+        tool_name: 'Write',
+        tool_input: { file_path: '.env' },
+      }).decision,
+      'deny'
+    );
+    assert.equal(
+      evaluatePreToolUse({
+        tool_name: 'Bash',
+        tool_input: { command: 'rm -rf /' },
+      }).decision,
+      'deny'
+    );
+    assert.equal(
+      evaluateStop(
+        { workspacePaths: [tempDir], stop_hook_active: true },
+        { env: { ...process.env, FACTORY_ENFORCE_STOP: '1' } }
+      ).decision,
+      'allow'
+    );
+
+    // Verify Markdown & SARIF CLI output formats
+    let stdoutBuf = '';
+    const customIo = {
+      stdout: { write: (s) => { stdoutBuf += s; } },
+      stderr: { write: () => {} },
+    };
+
+    const badFile = path.join(tempDir, 'vuln.js');
+    fs.writeFileSync(badFile, ['const x = eval', '("2 + 2");\n'].join(''), 'utf8');
+
+    const sarifExit = runCli(
+      ['audit-diff', '--cwd', tempDir, '--all', '--format', 'sarif'],
+      customIo
+    );
+    assert.equal(sarifExit, 1);
+    const sarif = JSON.parse(stdoutBuf);
+    assert.equal(sarif.version, '2.1.0');
+    assert.equal(sarif.runs[0].results[0].ruleId, 'dangerous-exec');
+    assert.equal(
+      sarif.runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri,
+      'vuln.js'
+    );
+
+    fs.rmSync(badFile);
+    fs.writeFileSync(
+      path.join(tempDir, 'package.json'),
+      JSON.stringify({ name: 'multi-agent-app', scripts: { test: 'node -e "process.exit(0)"' } }),
+      'utf8'
+    );
+    stdoutBuf = '';
+    const summaryFile = path.join(tempDir, 'step-summary.md');
+    const prevSummaryEnv = process.env.GITHUB_STEP_SUMMARY;
+    process.env.GITHUB_STEP_SUMMARY = summaryFile;
+    try {
+      const mdExit = runCli(
+        ['verify', '--cwd', tempDir, '--format', 'markdown', '--github-summary'],
+        customIo
+      );
+      assert.equal(mdExit, 0);
+      assert.ok(stdoutBuf.includes('## Software Factory Verification: PASS'));
+      assert.ok(fs.readFileSync(summaryFile, 'utf8').includes('| **PASS** | `workspace` | `hygiene` |'));
+    } finally {
+      if (prevSummaryEnv === undefined) {
+        delete process.env.GITHUB_STEP_SUMMARY;
+      } else {
+        process.env.GITHUB_STEP_SUMMARY = prevSummaryEnv;
+      }
+    }
   });
 });

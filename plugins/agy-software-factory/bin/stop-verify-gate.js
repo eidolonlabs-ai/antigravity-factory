@@ -282,7 +282,7 @@ export function evaluateStop(payload, { env = process.env } = {}) {
       return { decision: "allow" };
     }
 
-    if (payload.fullyIdle === false) {
+    if (payload.fullyIdle === false || payload.stop_hook_active === true) {
       return { decision: "allow" };
     }
 
@@ -312,7 +312,9 @@ export function evaluateStop(payload, { env = process.env } = {}) {
       return { decision: "allow" };
     }
 
-    const promptKey = `${payload.conversationId || "default"}:${gitState.stateHash}`;
+    const sessionKey =
+      payload.conversationId || payload.session_id || payload.sessionId || "default";
+    const promptKey = `${sessionKey}:${gitState.stateHash}`;
     if (hasAlreadyPromptedAndRecord(cwd, promptKey)) {
       return { decision: "allow" };
     }

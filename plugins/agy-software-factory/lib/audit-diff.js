@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { resolveSliceSpec } from './spec.js';
 
 const SKIP_DIRS = new Set([
   'node_modules',
@@ -391,7 +392,7 @@ function globToRegExp(globPattern) {
   return new RegExp(regexStr);
 }
 
-function matchesAllowedPath(relPath, allowedPatterns) {
+export function matchesAllowedPath(relPath, allowedPatterns) {
   const normFile = relPath.replace(/\\/g, '/').replace(/^\.\//, '');
   for (const rawPattern of allowedPatterns) {
     if (rawPattern === '.' || rawPattern === '*' || rawPattern === '**') {
@@ -433,6 +434,7 @@ export function runAuditDiff({
   base = null,
   allFiles = false,
   allowPaths = null,
+  slice = null,
 } = {}) {
   if (base !== null && base !== undefined) {
     const trimmedBase = String(base).trim();
@@ -441,8 +443,14 @@ export function runAuditDiff({
     }
   }
 
-  const allowedPatterns = parseAllowPaths(allowPaths);
   const resolvedCwd = path.resolve(cwd);
+  let effectiveAllowPaths = allowPaths;
+  if (!effectiveAllowPaths && slice) {
+    const sliceSpec = resolveSliceSpec(resolvedCwd, slice);
+    effectiveAllowPaths = sliceSpec.allowPaths;
+  }
+
+  const allowedPatterns = parseAllowPaths(effectiveAllowPaths);
   const realCwd = fs.existsSync(resolvedCwd) ? fs.realpathSync(resolvedCwd) : resolvedCwd;
   const gitTopLevel = !allFiles ? getGitTopLevel(realCwd) : null;
 

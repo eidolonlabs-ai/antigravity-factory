@@ -7,6 +7,14 @@ import { detectProject } from '../lib/detect.js';
 import { runVerify } from '../lib/verify.js';
 import { runAuditDiff } from '../lib/audit-diff.js';
 import { runInit } from '../lib/init.js';
+import { runPlan } from '../lib/spec.js';
+import { runLand } from '../lib/land.js';
+import { createTwinServer, loadTwinRoutesFromFile } from '../lib/twin.js';
+import {
+  formatVerifyMarkdown,
+  formatAuditMarkdown,
+  formatAuditSarif,
+} from '../lib/formatters.js';
 
 const HELP_TEXT = `Antigravity Software Factory CLI (agy-factory)
 
@@ -15,19 +23,32 @@ Usage:
 
 Commands:
   detect                 Inventory project stack, Docker Compose, and scripts
+  plan                   Scaffold (--init) or validate .factory/spec.json slice ownership
   verify                 Run deterministic QA checks and write .factory/verify-receipt.json
-  audit-diff             Scan git diff / untracked files for secrets and security sinks
-  init [targetDir]       Link or copy the Software Factory plugin into a repository
+  audit-diff             Scan git diff / untracked files for secrets, sinks, and slice boundaries
+  land                   Verify and land an isolated git worktree slice into the workspace
+  twin                   Start a zero-dependency Digital Twin Universe (DTU) mock HTTP server
+  init [targetDir]       Configure Software Factory for Antigravity, Claude, Gemini, or Codex
 
 Options:
   --cwd <dir>            Target working directory (defaults to current directory)
   --json                 Emit machine-readable JSON output
+  --format <fmt>         Output format: text | json | markdown | sarif (default: text)
+  --github-summary       Append Markdown report to $GITHUB_STEP_SUMMARY if set
   --require-tests        Fail verify if no test suite passes (NOT_RUN is not PASS)
   --skip-docker          Skip docker compose validation during verify
   --base <ref>           Additional git base ref to diff against in audit-diff
   --all                  Scan all workspace files in audit-diff instead of git diff only
-  --allow-paths <list>   Comma-separated owned paths/globs to enforce in audit-diff
+  --allow-paths <list>   Comma-separated owned paths/globs to enforce in audit-diff or land
+  --slice <name>         Slice name from .factory/spec.json for plan, audit-diff, or land
+  --worktree <dir>       Source worker git worktree directory for land
+  --dry-run              Preview files to land without modifying target workspace
+  --force                Force land even if audit-diff reports findings
+  --init                 Scaffold a starter .factory/spec.json when running plan
+  --routes <file>        JSON routes file for twin server
+  --port <number>        TCP port for twin server (default: 0 for random available port)
   --mode <link|copy>     Plugin installation mode for init (default: link)
+  --target <targets>     Agent target(s) for init: agy | claude | gemini | codex | all (default: agy)
   -h, --help             Show this help message
 `;
 
@@ -133,12 +154,79 @@ function formatAuditHuman(report) {
 }
 
 function formatInitHuman(res) {
-  return [
-    `Initialized Software Factory (${res.mode} mode)`,
+  const lines = [
+    `Initialized Software Factory (${res.mode} mode, targets: ${(res.targets || ['agy']).join(', ')})`,
     `  Target Directory : ${res.targetDir}`,
-    `  Plugins Manifest : ${res.pluginsJsonPath}`,
     `  Factory Config   : ${res.factoryConfigPath}`,
-  ].join('\n');
+  ];
+  if (res.pluginsJsonPath) {
+    lines.push(`  Plugins Manifest : ${res.pluginsJsonPath}`);
+  }
+  if (res.claudeSettingsPath) {
+    lines.push(`  Claude Settings  : ${res.claudeSettingsPath}`);
+  }
+  if (res.geminiSettingsPath) {
+    lines.push(`  Gemini Settings  : ${res.geminiSettingsPath}`);
+  }
+  if (res.gitPreCommitPath) {
+    lines.push(`  Git Pre-Commit   : ${res.gitPreCommitPath}`);
+  }
+  return lines.join('\n');
+}
+
+function formatPlanHuman(res) {
+  if (res.slice) {
+    return [
+      `Slice        : ${res.slice.name}`,
+      `Spec File    : ${res.specPath}`,
+      `Allow Paths  : ${res.slice.allowPaths.join(', ')}`,
+      `Verify Cmd   : ${res.slice.verifyCommand || '(none)'}`,
+      `Description  : ${res.slice.description || '(none)'}`,
+    ].join('\n');
+  }
+  const lines = [
+    `Workspace  : ${res.cwd}`,
+    `Spec File  : ${res.specPath || '(missing)'}`,
+    `Valid      : ${res.valid ? 'YES' : 'NO'}`,
+    `Slices     : ${(res.slices || []).join(', ') || '(none)'}`,
+  ];
+  if (res.errors && res.errors.length > 0) {
+    lines.push('Errors:');
+    for (const e of res.errors) {
+      lines.push(`  - ${e}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function formatLandHuman(res) {
+  const lines = [
+    `Worktree     : ${res.worktree}`,
+    `Target Dir   : ${res.targetDir}`,
+    `Allow Paths  : ${res.allowPaths.join(', ')}`,
+    `Audit Status : ${res.audit.status} (${res.audit.findings.length} findings)`,
+    `Landed Files : ${res.landedFiles.length}${res.dryRun ? ' (dry-run)' : ''}`,
+    `Deleted Files: ${res.deletedFiles.length}${res.dryRun ? ' (dry-run)' : ''}`,
+    `Verdict      : ${res.ok ? 'LANDED' : 'BLOCKED'}`,
+  ];
+  for (const f of res.landedFiles) {
+    lines.push(`  + ${f}`);
+  }
+  for (const d of res.deletedFiles) {
+    lines.push(`  - ${d}`);
+  }
+  return lines.join('\n');
+}
+
+function maybeAppendGithubSummary(markdownText, enabled) {
+  if (!enabled) return;
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (!summaryPath) return;
+  try {
+    fs.appendFileSync(summaryPath, `${markdownText}\n\n`, 'utf8');
+  } catch {
+    // Ignore summary write errors outside GitHub Actions
+  }
 }
 
 /**
@@ -164,12 +252,22 @@ export function runCli(
       options: {
         cwd: { type: 'string' },
         json: { type: 'boolean', default: false },
+        format: { type: 'string' },
+        'github-summary': { type: 'boolean', default: false },
         'require-tests': { type: 'boolean', default: false },
         'skip-docker': { type: 'boolean', default: false },
         base: { type: 'string' },
         all: { type: 'boolean', default: false },
         'allow-paths': { type: 'string' },
+        slice: { type: 'string' },
+        worktree: { type: 'string' },
+        'dry-run': { type: 'boolean', default: false },
+        force: { type: 'boolean', default: false },
+        init: { type: 'boolean', default: false },
+        routes: { type: 'string' },
+        port: { type: 'string' },
         mode: { type: 'string', default: 'link' },
+        target: { type: 'string', default: 'agy' },
         help: { type: 'boolean', short: 'h', default: false },
       },
     });
@@ -205,14 +303,34 @@ export function runCli(
         return 0;
       }
 
+      case 'plan': {
+        const result = runPlan({
+          cwd: effectiveCwd,
+          init: Boolean(values.init),
+          slice: values.slice || null,
+        });
+        if (values.json || values.format === 'json') {
+          out(JSON.stringify(result, null, 2));
+        } else {
+          out(formatPlanHuman(result));
+        }
+        return result.ok ? 0 : 1;
+      }
+
       case 'verify': {
         const receipt = runVerify({
           cwd: effectiveCwd,
           requireTests: values['require-tests'] ? true : undefined,
           skipDocker: Boolean(values['skip-docker']),
         });
-        if (values.json) {
+        const fmt = values.json ? 'json' : (values.format || 'text').toLowerCase();
+        const md = formatVerifyMarkdown(receipt);
+        maybeAppendGithubSummary(md, Boolean(values['github-summary']));
+
+        if (fmt === 'json') {
           out(JSON.stringify(receipt, null, 2));
+        } else if (fmt === 'markdown' || fmt === 'md') {
+          out(md);
         } else {
           out(formatVerifyHuman(receipt));
         }
@@ -225,13 +343,53 @@ export function runCli(
           base: values.base || null,
           allFiles: Boolean(values.all),
           allowPaths: values['allow-paths'] || null,
+          slice: values.slice || null,
         });
-        if (values.json) {
+        const fmt = values.json ? 'json' : (values.format || 'text').toLowerCase();
+        const md = formatAuditMarkdown(report);
+        maybeAppendGithubSummary(md, Boolean(values['github-summary']));
+
+        if (fmt === 'json') {
           out(JSON.stringify(report, null, 2));
+        } else if (fmt === 'sarif') {
+          out(formatAuditSarif(report));
+        } else if (fmt === 'markdown' || fmt === 'md') {
+          out(md);
         } else {
           out(formatAuditHuman(report));
         }
         return report.status === 'FLAGGED' ? 1 : 0;
+      }
+
+      case 'land': {
+        const result = runLand({
+          cwd: effectiveCwd,
+          worktree: values.worktree,
+          slice: values.slice || null,
+          allowPaths: values['allow-paths'] || null,
+          dryRun: Boolean(values['dry-run']),
+          force: Boolean(values.force),
+        });
+        if (values.json || values.format === 'json') {
+          out(JSON.stringify(result, null, 2));
+        } else {
+          out(formatLandHuman(result));
+        }
+        return result.ok ? 0 : 1;
+      }
+
+      case 'twin': {
+        const routes = values.routes ? loadTwinRoutesFromFile(values.routes) : [];
+        const port = values.port ? Number.parseInt(values.port, 10) : 0;
+        const twin = createTwinServer({ routes });
+        twin.listen(port).then((started) => {
+          if (values.json || values.format === 'json') {
+            out(JSON.stringify({ ok: true, url: started.url, port: started.port }));
+          } else {
+            out(`Digital Twin server listening at ${started.url}`);
+          }
+        });
+        return 0;
       }
 
       case 'init': {
@@ -239,8 +397,9 @@ export function runCli(
         const result = runInit({
           targetDir,
           mode: values.mode || 'link',
+          target: values.target || 'agy',
         });
-        if (values.json) {
+        if (values.json || values.format === 'json') {
           out(JSON.stringify(result, null, 2));
         } else {
           out(formatInitHuman(result));
