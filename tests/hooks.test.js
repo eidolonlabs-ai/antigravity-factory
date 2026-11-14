@@ -402,3 +402,52 @@ test('Stop gate invalidates verify receipt upon post-verify tracked file deletio
   );
   assert.equal(afterUntrackedEdit.decision, 'continue');
 });
+
+test('PreToolUse guard blocks receipt forgery (.factory/**) and holdout test tampering', async () => {
+  const denyReceiptForge = await evaluatePreToolUse({
+    toolCall: {
+      name: 'write_file',
+      args: { Path: '/repo/.factory/verify-receipt.json' },
+    },
+    workspacePaths: ['/repo'],
+    conversationId: 'conv-dark-1',
+    stepIdx: 1,
+  });
+  assert.equal(denyReceiptForge.decision, 'deny');
+  assert.match(denyReceiptForge.reason, /\.factory/i);
+
+  const denyHoldoutDir = await evaluatePreToolUse({
+    toolCall: {
+      name: 'edit_file',
+      args: { Path: '/repo/tests/holdout/auth.test.js' },
+    },
+    workspacePaths: ['/repo'],
+    conversationId: 'conv-dark-1',
+    stepIdx: 2,
+  });
+  assert.equal(denyHoldoutDir.decision, 'deny');
+  assert.match(denyHoldoutDir.reason, /holdout/i);
+
+  const denyHoldoutSuffix = await evaluatePreToolUse({
+    toolCall: {
+      name: 'write_file',
+      args: { Path: '/repo/tests/billing.holdout.test.js' },
+    },
+    workspacePaths: ['/repo'],
+    conversationId: 'conv-dark-1',
+    stepIdx: 3,
+  });
+  assert.equal(denyHoldoutSuffix.decision, 'deny');
+  assert.match(denyHoldoutSuffix.reason, /holdout/i);
+
+  const allowNormalTest = await evaluatePreToolUse({
+    toolCall: {
+      name: 'write_file',
+      args: { Path: '/repo/tests/billing.test.js' },
+    },
+    workspacePaths: ['/repo'],
+    conversationId: 'conv-dark-1',
+    stepIdx: 4,
+  });
+  assert.equal(allowNormalTest.decision, 'allow');
+});

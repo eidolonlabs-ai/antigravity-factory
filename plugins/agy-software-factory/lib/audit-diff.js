@@ -338,19 +338,81 @@ function scanFileLines(absPath, relPath) {
   return { scanned: true, findings };
 }
 
+function parseAllowPaths(allowPaths) {
+  if (!allowPaths) return [];
+  const rawList = Array.isArray(allowPaths)
+    ? allowPaths
+    : String(allowPaths).split(',');
+  return rawList
+    .map((p) => String(p).trim().replace(/\\/g, '/').replace(/^\.\//, ''))
+    .filter(Boolean);
+}
+
+function globToRegExp(globPattern) {
+  let regexStr = '^';
+  for (let i = 0; i < globPattern.length; i += 1) {
+    const ch = globPattern[i];
+    if (ch === '*') {
+      if (globPattern[i + 1] === '*') {
+        regexStr += '.*';
+        i += 1;
+      } else {
+        regexStr += '[^/]*';
+      }
+    } else if (ch === '?') {
+      regexStr += '[^/]';
+    } else if ('\\.[]{}()+-^$|'.includes(ch)) {
+      regexStr += `\\${ch}`;
+    } else {
+      regexStr += ch;
+    }
+  }
+  regexStr += '$';
+  return new RegExp(regexStr);
+}
+
+function matchesAllowedPath(relPath, allowedPatterns) {
+  const normFile = relPath.replace(/\\/g, '/').replace(/^\.\//, '');
+  for (const rawPattern of allowedPatterns) {
+    if (rawPattern === '.' || rawPattern === '*' || rawPattern === '**') {
+      return true;
+    }
+    if (rawPattern.endsWith('/**') || rawPattern.endsWith('/*')) {
+      const prefix = rawPattern.replace(/\/\*+$/, '').replace(/\/+$/, '');
+      if (normFile === prefix || normFile.startsWith(`${prefix}/`)) {
+        return true;
+      }
+    }
+    if (rawPattern.includes('*') || rawPattern.includes('?')) {
+      if (globToRegExp(rawPattern).test(normFile)) {
+        return true;
+      }
+      continue;
+    }
+    const cleanPrefix = rawPattern.replace(/\/+$/, '');
+    if (normFile === cleanPrefix || normFile.startsWith(`${cleanPrefix}/`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Scans git diff / untracked files (or full workspace when `allFiles: true` or non-git)
- * for hardcoded secrets, dangerous execution sinks, XSS sinks, and SQL string interpolation.
+ * for hardcoded secrets, dangerous execution sinks, XSS sinks, SQL string interpolation,
+ * and optional slice-ownership boundary violations (`allowPaths`).
  *
  * @param {object} [options]
  * @param {string} [options.cwd=process.cwd()]
  * @param {string|null} [options.base=null]
  * @param {boolean} [options.allFiles=false]
+ * @param {string|string[]|null} [options.allowPaths=null]
  */
 export function runAuditDiff({
   cwd = process.cwd(),
   base = null,
   allFiles = false,
+  allowPaths = null,
 } = {}) {
   if (base !== null && base !== undefined) {
     const trimmedBase = String(base).trim();
@@ -359,6 +421,7 @@ export function runAuditDiff({
     }
   }
 
+  const allowedPatterns = parseAllowPaths(allowPaths);
   const resolvedCwd = path.resolve(cwd);
   const realCwd = fs.existsSync(resolvedCwd) ? fs.realpathSync(resolvedCwd) : resolvedCwd;
   const gitTopLevel = !allFiles ? getGitTopLevel(realCwd) : null;
@@ -373,6 +436,16 @@ export function runAuditDiff({
   const findings = [];
 
   for (const item of candidates) {
+    if (allowedPatterns.length > 0 && !matchesAllowedPath(item.relPath, allowedPatterns)) {
+      findings.push({
+        rule: 'slice-boundary-violation',
+        severity: 'high',
+        file: item.relPath,
+        line: 1,
+        snippet: `Allowed slice paths: ${allowedPatterns.join(', ')}`,
+        message: `File "${item.relPath}" is outside allowed slice ownership (${allowedPatterns.join(', ')}).`,
+      });
+    }
     const res = scanFileLines(item.absPath, item.relPath);
     if (res.scanned) {
       filesScanned += 1;

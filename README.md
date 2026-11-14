@@ -159,17 +159,19 @@ node bin/agy-factory.js verify [--cwd <dir>] [--require-tests] [--skip-docker] [
 Scans modified and untracked text files (or all repository files) for high-risk security anti-patterns with exact `file:line` precision.
 
 ```bash
-node bin/agy-factory.js audit-diff [--cwd <dir>] [--base <git-ref>] [--all] [--json]
+node bin/agy-factory.js audit-diff [--cwd <dir>] [--base <git-ref>] [--allow-paths <list>] [--all] [--json]
 ```
 
 | Flag | Description |
 | :--- | :--- |
 | `--cwd <dir>` | Target workspace directory (defaults to `process.cwd()`). |
 | `--base <git-ref>` | Include files changed relative to `<git-ref>` (`git diff --name-only <base>`) in addition to uncommitted status. |
+| `--allow-paths <list>` | Comma-separated owned file/directory prefixes or globs (e.g., `"api/**,db/init.sql"`). Any changed file outside this set triggers a `high`-severity `slice-boundary-violation`. |
 | `--all` | Scan all non-ignored text files in `<cwd>` rather than only changed/untracked files. |
 | `--json` | Emit structured JSON (`{ cwd, status, filesScanned, findings }`). |
 
 **Built-In Rules:**
+- `slice-boundary-violation` (`high`): Modified or untracked file outside `--allow-paths <list>` when validating slice ownership.
 - `hardcoded-secret` (`high`): Cloud access keys, private key headers, and inline secret/token/password assignments (ignoring documented local placeholders).
 - `dangerous-exec` (`high`): Dynamic code execution via `eval` or the `Function` constructor.
 - `sql-interpolation` (`high`): Unparameterized template-string value interpolation inside SQL queries.
@@ -210,6 +212,7 @@ When the `agy-software-factory` plugin is enabled, [hooks.json](plugins/agy-soft
 
 Runs [pre-tool-guard.js](plugins/agy-software-factory/bin/pre-tool-guard.js) before `write_file`, `edit_file`, and `run_command`:
 - **Secret & Git File Protection (`deny`)**: Blocks agent writes/edits to `.env` and `.env.*` (while explicitly allowing `.env.example`, `.env.sample`, `.env.template`, and `.env.test`), SSH/PEM private keys (`id_rsa`, `id_ed25519`, `*.pem`, `*.key`), and `.git/config` or `.git/HEAD`.
+- **Receipt & Holdout Test Integrity (`deny`)**: Blocks direct `write_file` / `edit_file` calls targeting `.factory/**` (preventing agents from forging `.factory/verify-receipt.json`) and protected holdout suites (`holdout/**` or `*.holdout.test.*` / `*.holdout.spec.*`).
 - **Catastrophic Shell Protection (`deny`)**: Blocks destructive system commands such as `rm -rf /`, `rm -rf ~`, `mkfs.*`, and fork bombs.
 - **Destructive Git Confirmation (`force_ask`)**: Requires explicit user confirmation before `git reset --hard`, `git push --force` / `-f`, or `git clean -fd` / `-fdx`.
 - **Fail-Safe**: Malformed or unrelated payloads default to `{ "decision": "allow" }`.

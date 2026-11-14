@@ -19,6 +19,8 @@ Run `agy-factory audit-diff` first to scan all modified and untracked files (or 
 
 ```bash
 node ./bin/agy-factory.js audit-diff --cwd . --json
+# Enforce slice file ownership boundaries for a worker or slice:
+# node ./bin/agy-factory.js audit-diff --cwd . --allow-paths "api/**,db/init.sql" --json
 # Compare against a specific git ref:
 # node ./bin/agy-factory.js audit-diff --cwd . --base main --json
 # Audit every non-ignored file in the workspace:
@@ -29,7 +31,8 @@ node ./bin/agy-factory.js audit-diff --cwd . --json
 
 ### Built-In Deterministic Rules
 
-`agy-factory audit-diff` flags exact `file:line` matches across four rule families:
+`agy-factory audit-diff` flags exact `file:line` matches across five rule families:
+- **`slice-boundary-violation`** (`high`): Modified or untracked files outside `--allow-paths <list>` (when enforcing disjoint slice ownership).
 - **`hardcoded-secret`** (`high`): Cloud access keys, PEM private key headers, and hardcoded API keys, tokens, secrets, or passwords.
 - **`dangerous-exec`** (`high`): Dynamic code execution via `eval` or the `Function` constructor.
 - **`sql-interpolation`** (`high`): Unparameterized template-literal value interpolation inside SQL statements.

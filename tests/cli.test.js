@@ -564,3 +564,36 @@ test('runVerify honors requireTests: true from .factory.json when CLI flag is om
   assert.equal(receiptPass.requireTests, true);
   assert.equal(receiptPass.ok, true);
 });
+
+test('runAuditDiff enforces --allow-paths slice ownership boundaries', async (t) => {
+  const tempRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'factory-slice-bounds-'));
+  t.after(() => {
+    fs.rmSync(tempRepo, { recursive: true, force: true });
+  });
+
+  fs.mkdirSync(path.join(tempRepo, 'api', 'src'), { recursive: true });
+  fs.mkdirSync(path.join(tempRepo, 'web', 'src'), { recursive: true });
+  fs.writeFileSync(path.join(tempRepo, 'api', 'src', 'index.js'), 'export const ok = true;\n', 'utf8');
+
+  // Within owned slice ("api/**") -> APPROVE_CANDIDATE
+  const inBounds = await runAuditDiff({
+    cwd: tempRepo,
+    allFiles: true,
+    allowPaths: 'api/**,db/init.sql',
+  });
+  assert.equal(inBounds.status, 'APPROVE_CANDIDATE');
+  assert.equal(inBounds.findings.length, 0);
+
+  // Touching forbidden file ("web/src/App.jsx") -> FLAGGED with slice-boundary-violation
+  fs.writeFileSync(path.join(tempRepo, 'web', 'src', 'App.jsx'), 'export default function App() {}\n', 'utf8');
+  const outOfBounds = await runAuditDiff({
+    cwd: tempRepo,
+    allFiles: true,
+    allowPaths: 'api/**,db/init.sql',
+  });
+  assert.equal(outOfBounds.status, 'FLAGGED');
+  const violation = outOfBounds.findings.find((f) => f.rule === 'slice-boundary-violation');
+  assert.ok(violation, 'expected slice-boundary-violation finding');
+  assert.equal(violation.file, 'web/src/App.jsx');
+  assert.equal(violation.severity, 'high');
+});

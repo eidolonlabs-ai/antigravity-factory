@@ -225,8 +225,25 @@ function inspectFileTarget(rawPath) {
     };
   }
 
+  if (/(^|\/)\.factory(\/|$)/i.test(normalized)) {
+    return {
+      decision: "deny",
+      reason: `Blocked direct modification of protected factory verification state (${normalized}). Run "agy-factory verify" instead.`,
+    };
+  }
+
   const base = path.posix.basename(normalized);
   const lowerBase = base.toLowerCase();
+
+  if (
+    /(^|\/)holdout\//i.test(normalized) ||
+    /\.holdout\.(test|spec)\.[a-z0-9]+$/i.test(lowerBase)
+  ) {
+    return {
+      decision: "deny",
+      reason: `Blocked modification of protected holdout test suite (${normalized}). Holdout tests cannot be edited by builder agents.`,
+    };
+  }
 
   if (
     (lowerBase === ".env" || lowerBase.startsWith(".env.")) &&

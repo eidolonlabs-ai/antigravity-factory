@@ -26,6 +26,7 @@ Options:
   --skip-docker          Skip docker compose validation during verify
   --base <ref>           Additional git base ref to diff against in audit-diff
   --all                  Scan all workspace files in audit-diff instead of git diff only
+  --allow-paths <list>   Comma-separated owned paths/globs to enforce in audit-diff
   --mode <link|copy>     Plugin installation mode for init (default: link)
   -h, --help             Show this help message
 `;
@@ -167,6 +168,7 @@ export function runCli(
         'skip-docker': { type: 'boolean', default: false },
         base: { type: 'string' },
         all: { type: 'boolean', default: false },
+        'allow-paths': { type: 'string' },
         mode: { type: 'string', default: 'link' },
         help: { type: 'boolean', short: 'h', default: false },
       },
@@ -222,6 +224,7 @@ export function runCli(
           cwd: effectiveCwd,
           base: values.base || null,
           allFiles: Boolean(values.all),
+          allowPaths: values['allow-paths'] || null,
         });
         if (values.json) {
           out(JSON.stringify(report, null, 2));
