@@ -55,3 +55,4 @@ Partition implementation into independent slices and output a Markdown **Slice O
 - **Pairwise Disjointness**: No file or glob may appear in `Owned Files` for more than one parallel slice.
 - **Shared Root Files Have One Owner**: Files like `package.json`, `docker-compose.yml`, `.gitignore`, or shared schema files belong to exactly **one** slice (or are landed by the coordinator in Stage 1 before fan-out).
 - **Executable Slice Verification**: Every slice must have a fast, deterministic `Verification Command` the owning worker runs in its `workspace: "share"` worktree before reporting completion.
+- **Machine-Readable Spec (`.factory/spec.json`)**: Optionally persist or validate the slice table with `node ./bin/agy-factory.js plan --init` and `node ./bin/agy-factory.js plan` so `PreToolUse` (`FACTORY_SLICE=<slice>`), `audit-diff --slice <slice>`, and `land --slice <slice>` enforce slice boundaries automatically.

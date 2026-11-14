@@ -49,14 +49,18 @@ flowchart LR
 │       ├── plugin.json                      # Plugin manifest (skills, rules, hooks bundle)
 │       ├── hooks.json                       # PreToolUse & Stop lifecycle hook wiring
 │       ├── bin/
-│       │   ├── agy-factory.js               # Standalone CLI (detect, verify, audit-diff, init)
-│       │   ├── pre-tool-guard.js            # PreToolUse secret/git/command guardrail
+│       │   ├── agy-factory.js               # Standalone CLI (detect, plan, verify, audit-diff, land, twin, init)
+│       │   ├── pre-tool-guard.js            # PreToolUse secret/git/command/slice guardrail
 │       │   └── stop-verify-gate.js          # Bounded opt-in Stop verification gate
 │       ├── lib/
 │       │   ├── detect.js                    # Stack & component script discovery
+│       │   ├── spec.js                      # Declarative .factory/spec.json slice validator
 │       │   ├── verify.js                    # Deterministic runner & verify-receipt writer
-│       │   ├── audit-diff.js                # Regex diff scanner with file:line reporting
-│       │   └── init.js                      # Cross-repo installer (link or copy mode)
+│       │   ├── audit-diff.js                # Regex diff scanner & slice boundary checker
+│       │   ├── land.js                      # Automated worktree slice auditor & lander
+│       │   ├── twin.js                      # Digital Twin Universe (DTU) HTTP mock & webhook server
+│       │   ├── formatters.js                # GitHub Markdown & SARIF v2.1.0 formatters
+│       │   └── init.js                      # Multi-agent installer (agy, claude, gemini, codex, all)
 │       ├── rules/
 │       │   └── AGENTS.md                    # Portable always-on Software Factory rules
 │       └── skills/
@@ -71,8 +75,9 @@ flowchart LR
 │       ├── api/                             # Node 20 + Express + pg REST API & unit tests
 │       └── web/                             # React + Vite frontend served via Nginx
 └── tests/
-    ├── cli.test.js                          # Unit & subprocess tests for detect/verify/audit/init
-    └── hooks.test.js                        # Unit & stdin/stdout tests for PreToolUse & Stop hooks
+    ├── cli.test.js                          # Unit & subprocess tests for CLI commands
+    ├── hooks.test.js                        # Unit & stdin/stdout tests for PreToolUse & Stop hooks
+    └── pipeline-apps.test.js                # 7 E2E multi-stage pipeline & multi-agent test apps
 ```
 
 ---
@@ -129,14 +134,6 @@ node bin/agy-factory.js detect [--cwd <dir>] [--json]
 - **Exit code**: `0` on success.
 
 ---
-
-### `agy-factory verify`
-
-Executes deterministic verification checks across the target repository and writes a cryptographic state receipt to `<cwd>/.factory/verify-receipt.json`.
-
-```bash
-node bin/agy-factory.js verify [--cwd <dir>] [--require-tests] [--skip-docker] [--json]
-```
 
 ### `agy-factory plan`
 
@@ -353,16 +350,19 @@ Once copied or registered via `.agents/plugins.json`, Antigravity discovers `agy
 
 ---
 
-## Roadmap & Future Enhancements
+## Cross-Agent Portability (`--target agy|claude|gemini|codex|all`)
 
-- **Cross-Agent Harness Adapters (`--agent claude|codex|cursor|all`)**:
-  - The core deterministic CLI (`detect`, `verify`, `audit-diff`) and `AGENTS.md` already work across coding agents today.
-  - Planned `agy-factory init --agent <target>` flag to automatically generate:
-    - **Claude Code**: `CLAUDE.md` (`@AGENTS.md`), `.claude/skills/` symlinks, and `.claude/settings.json` hook adapters mapping Claude's `tool_name` (`Bash`, `Write`, `Edit`) and exit-code `2` contract to `pre-tool-guard.js` and `stop-verify-gate.js`.
-    - **OpenAI Codex**: `.agents/skills/` exposure alongside `AGENTS.md` and `git worktree` parallel slice orchestration.
-    - **Cursor**: `.cursor/rules/` bridge and command runners.
-- **Opt-In Container Runtime Smoke Gate (`--docker-smoke`)**:
-  - Optional flag on `agy-factory verify` to spin up an isolated ephemeral Docker Compose stack (`docker compose -p factory-<id> up --build -d --wait`), probe service health endpoints, and tear down (`down -v`) automatically.
+In addition to native Antigravity plugin installation, `agy-factory init` can wire the Software Factory's rules and lifecycle hooks into **Claude Code**, **Gemini CLI**, and **OpenAI Codex / Git**:
+
+```bash
+# Configure Antigravity + Claude Code + Gemini CLI + Git pre-commit hook in one command:
+node bin/agy-factory.js init /path/to/your-repo --mode copy --target all
+```
+
+- **Antigravity (`--target agy`)**: Writes `.agents/plugins.json` and `.factory.json`.
+- **Claude Code (`--target claude`)**: Writes `.claude/settings.json` (`PreToolUse` & `Stop` hooks) and `CLAUDE.md` (`@AGENTS.md`).
+- **Gemini CLI (`--target gemini`)**: Writes `.gemini/settings.json` (`BeforeTool` & `AfterAgent` hooks).
+- **Codex / Git (`--target codex`)**: Writes `.git/hooks/pre-commit` (`chmod 0755`) running `agy-factory audit-diff` and `agy-factory verify`.
 
 ---
 
