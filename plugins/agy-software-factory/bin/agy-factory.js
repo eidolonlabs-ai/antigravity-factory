@@ -206,7 +206,7 @@ export function runCli(
       case 'verify': {
         const receipt = runVerify({
           cwd: effectiveCwd,
-          requireTests: Boolean(values['require-tests']),
+          requireTests: values['require-tests'] ? true : undefined,
           skipDocker: Boolean(values['skip-docker']),
         });
         if (values.json) {

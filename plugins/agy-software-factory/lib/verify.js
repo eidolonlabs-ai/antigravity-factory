@@ -305,7 +305,7 @@ function isDockerComposeAvailable(baseEnv = process.env) {
   return res.status === 0 && !res.error;
 }
 
-function ensureNodeDependenciesIfNeeded(component, baseEnv = process.env) {
+function ensureNodeDependenciesIfNeeded(component, resolvedCwd, baseEnv = process.env) {
   if (component.type !== 'node') return null;
   const pkgPath = path.join(component.path, 'package.json');
   if (!fs.existsSync(pkgPath)) return null;
@@ -320,15 +320,46 @@ function ensureNodeDependenciesIfNeeded(component, baseEnv = process.env) {
   const hasDeps =
     (pkg.dependencies && Object.keys(pkg.dependencies).length > 0) ||
     (pkg.devDependencies && Object.keys(pkg.devDependencies).length > 0);
-  const nodeModulesPath = path.join(component.path, 'node_modules');
+  const localNodeModules = path.join(component.path, 'node_modules');
+  const rootNodeModules = resolvedCwd ? path.join(resolvedCwd, 'node_modules') : null;
+  const hasInstalledModules =
+    fs.existsSync(localNodeModules) ||
+    (rootNodeModules && fs.existsSync(rootNodeModules));
 
-  if (hasDeps && !fs.existsSync(nodeModulesPath)) {
-    const installRes = execShellCommand('npm install --no-audit --no-fund', component.path, 180_000, baseEnv);
+  if (hasDeps && !hasInstalledModules) {
+    const pm = component.packageManager || 'npm';
+    const installCmd =
+      pm === 'pnpm'
+        ? 'pnpm install'
+        : pm === 'yarn'
+          ? 'yarn install'
+          : pm === 'bun'
+            ? 'bun install'
+            : 'npm install --no-audit --no-fund';
+    const installRes = execShellCommand(installCmd, component.path, 180_000, baseEnv);
     if (!installRes.ok) {
-      return `npm install failed: ${installRes.output}`;
+      return `${pm} install failed: ${installRes.output}`;
     }
   }
   return null;
+}
+
+function resolveRequireTestsOption(resolvedCwd, explicitRequireTests) {
+  if (typeof explicitRequireTests === 'boolean') {
+    return explicitRequireTests;
+  }
+  const configPath = path.join(resolvedCwd, '.factory.json');
+  if (fs.existsSync(configPath) && fs.statSync(configPath).isFile()) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (typeof parsed?.requireTests === 'boolean') {
+        return parsed.requireTests;
+      }
+    } catch {
+      // Ignore malformed .factory.json and default to false
+    }
+  }
+  return false;
 }
 
 /**
@@ -336,17 +367,18 @@ function ensureNodeDependenciesIfNeeded(component, baseEnv = process.env) {
  *
  * @param {object} [options]
  * @param {string} [options.cwd=process.cwd()]
- * @param {boolean} [options.requireTests=false]
+ * @param {boolean} [options.requireTests]
  * @param {boolean} [options.skipDocker=false]
  * @param {NodeJS.ProcessEnv} [options.env=process.env]
  */
 export function runVerify({
   cwd = process.cwd(),
-  requireTests = false,
+  requireTests,
   skipDocker = false,
   env = process.env,
 } = {}) {
   const resolvedCwd = path.resolve(cwd);
+  const effectiveRequireTests = resolveRequireTestsOption(resolvedCwd, requireTests);
   const project = detectProject(resolvedCwd);
   const checks = [];
 
@@ -386,7 +418,9 @@ export function runVerify({
   for (const component of project.components) {
     const compLabel = component.relPath === '.' ? component.name : component.relPath;
     const hasAnyConfiguredCommand = CATEGORIES.some((cat) => Boolean(component.commands?.[cat]));
-    const installError = hasAnyConfiguredCommand ? ensureNodeDependenciesIfNeeded(component, env) : null;
+    const installError = hasAnyConfiguredCommand
+      ? ensureNodeDependenciesIfNeeded(component, resolvedCwd, env)
+      : null;
 
     for (const category of CATEGORIES) {
       const cmd = component.commands?.[category] || null;
@@ -438,7 +472,7 @@ export function runVerify({
   };
 
   const hasPassingTests = checks.some((c) => c.category === 'test' && c.status === 'PASS');
-  const ok = summary.fail === 0 && (!requireTests || hasPassingTests);
+  const ok = summary.fail === 0 && (!effectiveRequireTests || hasPassingTests);
 
   const factoryDir = path.join(resolvedCwd, '.factory');
   fs.mkdirSync(factoryDir, { recursive: true });
@@ -451,7 +485,7 @@ export function runVerify({
     cwd: resolvedCwd,
     digest,
     ok,
-    requireTests: Boolean(requireTests),
+    requireTests: Boolean(effectiveRequireTests),
     summary,
     checks,
   };

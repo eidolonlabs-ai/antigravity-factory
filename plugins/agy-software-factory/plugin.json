@@ -3,6 +3,10 @@
   "displayName": "Antigravity Software Factory",
   "version": "1.0.0",
   "description": "End-to-end multi-agent Software Factory with parallel build orchestration, deterministic QA verification CLI, diff security auditing, and lifecycle guardrails.",
+  "logo": "assets/logo.svg",
+  "author": "Mark Castillo",
+  "homepage": "https://github.com/theRealMarkCastillo/agy-software-factory",
+  "repository": "https://github.com/theRealMarkCastillo/agy-software-factory",
   "suggestedPrompts": [
     "Build a new feature end-to-end using the Software Factory pipeline",
     "Run deterministic QA verification across all workspace components",

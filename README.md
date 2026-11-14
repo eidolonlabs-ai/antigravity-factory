@@ -1,5 +1,8 @@
 # Antigravity Software Factory (`agy-software-factory`)
 
+[![Software Factory CI](https://github.com/theRealMarkCastillo/agy-software-factory/actions/workflows/ci.yml/badge.svg)](https://github.com/theRealMarkCastillo/agy-software-factory/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 **Antigravity Software Factory** is a zero-dependency, portable **Antigravity plugin + deterministic Node.js CLI** that turns multi-agent software development into a repeatable, auditable pipeline.
 
 It pairs **probabilistic agent skills** (specification planning, isolated parallel swarm authoring, browser E2E testing, and semantic code review) with **deterministic runtime gates** (stack detection, test/build verification with cryptographic workspace receipts, `file:line` diff security scanning, and `PreToolUse` / `Stop` lifecycle hooks).
@@ -215,7 +218,7 @@ Runs [pre-tool-guard.js](plugins/agy-software-factory/bin/pre-tool-guard.js) bef
 
 Runs [stop-verify-gate.js](plugins/agy-software-factory/bin/stop-verify-gate.js) when the agent goes idle (`terminationReason: "NO_TOOL_CALL"` and `fullyIdle: true`):
 - **Opt-In Activation**: Off by default so exploratory chats are never interrupted. Enable per-repository by setting `"enforceStopVerify": true` in `.factory.json`, or per-session via environment variable `FACTORY_ENFORCE_STOP=1`.
-- **Receipt & Digest Check**: If the git workspace has uncommitted changes, verifies that `<cwd>/.factory/verify-receipt.json` exists with `"ok": true` and matches the current workspace state digest (or is newer than all modified files). If missing or stale, returns `{ "decision": "continue", "reason": "..." }` prompting the agent to run `agy-factory verify`.
+- **Receipt & Digest Check**: If the git workspace has uncommitted changes, verifies that `<cwd>/.factory/verify-receipt.json` exists with `"ok": true` and its SHA-256 `digest` matches the current workspace state (`git status --porcelain -uall` + `git diff HEAD` + untracked file contents). Any post-verify edit or file deletion invalidates the receipt and returns `{ "decision": "continue", "reason": "..." }` prompting the agent to re-run `agy-factory verify`.
 - **Bounded Loop Protection**: Records `${conversationId}:${stateHash}` in `.factory/stop-gate-state.json`. If the exact same conversation and git state have already been prompted once, the second `Stop` check returns `{ "decision": "allow" }`—guaranteeing the agent can never get stuck in an infinite stop loop.
 
 ---
@@ -289,6 +292,19 @@ cp -R plugins/agy-software-factory ~/.gemini/config/plugins/agy-software-factory
 ```
 
 Once copied or registered via `.agents/plugins.json`, Antigravity discovers `agy-software-factory` automatically and activates its rules, lifecycle hooks, and `factory-*` skills on the next turn.
+
+---
+
+## Roadmap & Future Enhancements
+
+- **Cross-Agent Harness Adapters (`--agent claude|codex|cursor|all`)**:
+  - The core deterministic CLI (`detect`, `verify`, `audit-diff`) and `AGENTS.md` already work across coding agents today.
+  - Planned `agy-factory init --agent <target>` flag to automatically generate:
+    - **Claude Code**: `CLAUDE.md` (`@AGENTS.md`), `.claude/skills/` symlinks, and `.claude/settings.json` hook adapters mapping Claude's `tool_name` (`Bash`, `Write`, `Edit`) and exit-code `2` contract to `pre-tool-guard.js` and `stop-verify-gate.js`.
+    - **OpenAI Codex**: `.agents/skills/` exposure alongside `AGENTS.md` and `git worktree` parallel slice orchestration.
+    - **Cursor**: `.cursor/rules/` bridge and command runners.
+- **Opt-In Container Runtime Smoke Gate (`--docker-smoke`)**:
+  - Optional flag on `agy-factory verify` to spin up an isolated ephemeral Docker Compose stack (`docker compose -p factory-<id> up --build -d --wait`), probe service health endpoints, and tear down (`down -v`) automatically.
 
 ---
 

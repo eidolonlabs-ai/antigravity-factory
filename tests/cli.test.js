@@ -470,3 +470,97 @@ test('runVerify treats Docker Compose as optional (NOT_RUN, ok: true) when docke
   assert.match(dockerCheck.output, /not installed/i);
   assert.equal(receipt.ok, true);
 });
+
+test('detectProject detects pnpm/yarn/bun package managers and monorepo apps/* & packages/*', (t) => {
+  const tempRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'factory-monorepo-'));
+  t.after(() => {
+    fs.rmSync(tempRepo, { recursive: true, force: true });
+  });
+
+  // Root uses pnpm-lock.yaml
+  fs.writeFileSync(path.join(tempRepo, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0\n', 'utf8');
+
+  // apps/web inherits pnpm from root lockfile
+  const webDir = path.join(tempRepo, 'apps', 'web');
+  fs.mkdirSync(webDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(webDir, 'package.json'),
+    JSON.stringify({
+      name: '@acme/web',
+      scripts: { build: 'vite build', lint: 'eslint .' },
+    }),
+    'utf8'
+  );
+
+  // packages/shared declares yarn via packageManager
+  const sharedDir = path.join(tempRepo, 'packages', 'shared');
+  fs.mkdirSync(sharedDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(sharedDir, 'package.json'),
+    JSON.stringify({
+      name: '@acme/shared',
+      packageManager: 'yarn@4.1.0',
+      scripts: { test: 'node --test', typecheck: 'tsc --noEmit' },
+    }),
+    'utf8'
+  );
+
+  const detected = detectProject(tempRepo);
+  assert.equal(detected.components.length, 2);
+
+  const webComp = detected.components.find((c) => c.relPath === 'apps/web');
+  assert.ok(webComp);
+  assert.equal(webComp.packageManager, 'pnpm');
+  assert.equal(webComp.commands.build, 'pnpm run build');
+  assert.equal(webComp.commands.lint, 'pnpm run lint');
+
+  const sharedComp = detected.components.find((c) => c.relPath === 'packages/shared');
+  assert.ok(sharedComp);
+  assert.equal(sharedComp.packageManager, 'yarn');
+  assert.equal(sharedComp.commands.test, 'yarn test');
+  assert.equal(sharedComp.commands.typecheck, 'yarn run typecheck');
+});
+
+test('runVerify honors requireTests: true from .factory.json when CLI flag is omitted', async (t) => {
+  const tempRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'factory-cfg-reqtests-'));
+  t.after(() => {
+    fs.rmSync(tempRepo, { recursive: true, force: true });
+  });
+
+  // Initialize workspace (creates .factory.json with requireTests: true)
+  await runInit({ targetDir: tempRepo, mode: 'link' });
+
+  // Package with build only, no test script
+  fs.writeFileSync(
+    path.join(tempRepo, 'package.json'),
+    JSON.stringify({
+      name: 'cfg-test-app',
+      version: '1.0.0',
+      scripts: { build: 'node -e "process.exit(0)"' },
+    }),
+    'utf8'
+  );
+
+  // Without passing requireTests explicitly, .factory.json requireTests: true should cause ok: false
+  const receiptFail = await runVerify({ cwd: tempRepo, skipDocker: true });
+  assert.equal(receiptFail.requireTests, true);
+  assert.equal(receiptFail.ok, false);
+
+  // Once a real test script is added, runVerify passes automatically
+  fs.writeFileSync(
+    path.join(tempRepo, 'package.json'),
+    JSON.stringify({
+      name: 'cfg-test-app',
+      version: '1.0.0',
+      scripts: {
+        build: 'node -e "process.exit(0)"',
+        test: 'node -e "process.exit(0)"',
+      },
+    }),
+    'utf8'
+  );
+
+  const receiptPass = await runVerify({ cwd: tempRepo, skipDocker: true });
+  assert.equal(receiptPass.requireTests, true);
+  assert.equal(receiptPass.ok, true);
+});

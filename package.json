@@ -3,6 +3,12 @@
   "version": "1.0.0",
   "description": "Antigravity-native Software Factory CLI, lifecycle guardrails, and multi-agent skills",
   "license": "MIT",
+  "author": "Mark Castillo",
+  "homepage": "https://github.com/theRealMarkCastillo/agy-software-factory",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/theRealMarkCastillo/agy-software-factory.git"
+  },
   "type": "module",
   "bin": {
     "agy-factory": "./bin/agy-factory.js"

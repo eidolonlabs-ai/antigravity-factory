@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" fill="none">
+  <defs>
+    <linearGradient id="factoryBg" x1="16" y1="16" x2="112" y2="112" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#1E293B" />
+    </linearGradient>
+    <linearGradient id="factoryAccent" x1="28" y1="28" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#22C55E" />
+    </linearGradient>
+  </defs>
+  <!-- 12.5% outer margin (16px padding on 128x128 canvas) -->
+  <rect x="16" y="16" width="96" height="96" rx="22" fill="url(#factoryBg)" stroke="url(#factoryAccent)" stroke-width="4" />
+  <!-- Parallel slice nodes -->
+  <rect x="30" y="34" width="24" height="16" rx="4" fill="#38BDF8" />
+  <rect x="30" y="56" width="24" height="16" rx="4" fill="#38BDF8" fill-opacity="0.85" />
+  <rect x="30" y="78" width="24" height="16" rx="4" fill="#38BDF8" fill-opacity="0.7" />
+  <!-- Convergence lines -->
+  <path d="M54 42 H66 L74 64 M54 64 H74 M54 86 H66 L74 64" stroke="#94A3B8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- Verification shield/check badge -->
+  <circle cx="84" cy="64" r="16" fill="#22C55E" />
+  <path d="M77 64.5 L82 69.5 L92 58.5" stroke="#0F172A" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

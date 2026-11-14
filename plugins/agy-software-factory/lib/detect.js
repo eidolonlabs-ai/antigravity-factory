@@ -9,6 +9,15 @@ const SKIP_CHILD_DIRS = new Set([
   '.factory',
   'plugins',
   'examples',
+  'tests',
+  'test',
+  'bin',
+]);
+
+const MONOREPO_CONTAINER_DIRS = new Set([
+  'apps',
+  'packages',
+  'services',
 ]);
 
 const COMPOSE_FILES = [
@@ -30,6 +39,31 @@ function isPlaceholderTestScript(script) {
   return typeof script === 'string' && script.includes('Error: no test specified');
 }
 
+function detectNodePackageManager(absDir, rootPath, pkg) {
+  if (typeof pkg?.packageManager === 'string') {
+    const pmSpec = pkg.packageManager.trim().toLowerCase();
+    if (pmSpec.startsWith('pnpm@') || pmSpec === 'pnpm') return 'pnpm';
+    if (pmSpec.startsWith('yarn@') || pmSpec === 'yarn') return 'yarn';
+    if (pmSpec.startsWith('bun@') || pmSpec === 'bun') return 'bun';
+    if (pmSpec.startsWith('npm@') || pmSpec === 'npm') return 'npm';
+  }
+
+  const dirsToCheck = absDir === rootPath ? [absDir] : [absDir, rootPath];
+  for (const dir of dirsToCheck) {
+    if (fs.existsSync(path.join(dir, 'pnpm-lock.yaml'))) return 'pnpm';
+    if (fs.existsSync(path.join(dir, 'yarn.lock'))) return 'yarn';
+    if (
+      fs.existsSync(path.join(dir, 'bun.lockb')) ||
+      fs.existsSync(path.join(dir, 'bun.lock'))
+    ) {
+      return 'bun';
+    }
+    if (fs.existsSync(path.join(dir, 'package-lock.json'))) return 'npm';
+  }
+
+  return 'npm';
+}
+
 function inspectDirectory(dirPath, rootPath) {
   const detected = [];
   const absDir = path.resolve(dirPath);
@@ -40,6 +74,7 @@ function inspectDirectory(dirPath, rootPath) {
   const pkgPath = path.join(absDir, 'package.json');
   if (fs.existsSync(pkgPath) && fs.statSync(pkgPath).isFile()) {
     const pkg = safeReadJson(pkgPath) || {};
+    const pm = detectNodePackageManager(absDir, rootPath, pkg);
     const rawScripts = pkg.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : {};
     const scripts = {};
     for (const [k, v] of Object.entries(rawScripts)) {
@@ -50,18 +85,18 @@ function inspectDirectory(dirPath, rootPath) {
 
     const commands = {};
     if (scripts.lint) {
-      commands.lint = 'npm run lint';
+      commands.lint = `${pm} run lint`;
     }
     if (scripts.typecheck) {
-      commands.typecheck = 'npm run typecheck';
+      commands.typecheck = `${pm} run typecheck`;
     } else if (scripts['type-check']) {
-      commands.typecheck = 'npm run type-check';
+      commands.typecheck = `${pm} run type-check`;
     }
     if (scripts.test && !isPlaceholderTestScript(scripts.test)) {
-      commands.test = 'npm test';
+      commands.test = pm === 'yarn' ? 'yarn test' : `${pm} test`;
     }
     if (scripts.build) {
-      commands.build = 'npm run build';
+      commands.build = `${pm} run build`;
     }
 
     const name =
@@ -72,6 +107,7 @@ function inspectDirectory(dirPath, rootPath) {
       path: absDir,
       relPath,
       type: 'node',
+      packageManager: pm,
       scripts,
       commands,
     });
@@ -175,7 +211,25 @@ export function detectProject(cwd = process.cwd()) {
 
     for (const childName of childDirs) {
       const childPath = path.join(root, childName);
-      components.push(...inspectDirectory(childPath, root));
+      const childComponents = inspectDirectory(childPath, root);
+      components.push(...childComponents);
+
+      if (MONOREPO_CONTAINER_DIRS.has(childName) && childComponents.length === 0) {
+        const nestedEntries = fs.readdirSync(childPath, { withFileTypes: true });
+        const nestedDirs = nestedEntries
+          .filter((entry) => {
+            if (!entry.isDirectory()) return false;
+            if (entry.name.startsWith('.')) return false;
+            if (SKIP_CHILD_DIRS.has(entry.name)) return false;
+            return true;
+          })
+          .map((entry) => entry.name)
+          .sort((a, b) => a.localeCompare(b));
+
+        for (const nestedName of nestedDirs) {
+          components.push(...inspectDirectory(path.join(childPath, nestedName), root));
+        }
+      }
     }
   }
 

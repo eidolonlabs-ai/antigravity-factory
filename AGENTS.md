@@ -12,7 +12,7 @@ This repository develops and ships **Antigravity Software Factory** (`agy-softwa
 
 ## Repository Contributor Constraints
 
-- **Zero External Runtime Dependencies**: Everything inside `plugins/agy-software-factory/` (`bin/` and `lib/`) must use **only** Node.js 20+ built-in ESM modules (`node:fs`, `node:path`, `node:crypto`, `node:child_process`, `node:util`, `node:os`). Do not add third-party npm packages to the plugin or root `package.json`.
+- **Zero External Runtime Dependencies in the Factory Plugin**: Everything inside `plugins/agy-software-factory/` (`bin/` and `lib/`) and `bin/agy-factory.js` must use **only** Node.js 20+ built-in ESM modules (`node:fs`, `node:path`, `node:crypto`, `node:child_process`, `node:util`, `node:os`). Do not add third-party npm packages inside `plugins/agy-software-factory/`. *(Note: If you created a new application repository from this GitHub template, you are free to add application dependencies to your app directories or root `package.json` as needed.)*
 - **Self-Contained Plugin Bundle**: `plugins/agy-software-factory/` must operate cleanly when linked or copied into another repository (`agy-factory init --mode link|copy`) or installed under `~/.gemini/config/plugins/agy-software-factory`. Lifecycle hooks in `plugins/agy-software-factory/bin/` must remain self-contained and fail safe.
 - **Antigravity Spec Compliance**: Keep `plugins/agy-software-factory/plugin.json` restricted to documented manifest keys, keep `plugins/agy-software-factory/rules/AGENTS.md` plain Markdown with no YAML frontmatter, and include `name` and `description` frontmatter on every `SKILL.md`.
 - **Pre-Completion Gate**: Before finishing any change to this repository, run:
