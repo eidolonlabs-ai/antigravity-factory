@@ -1,0 +1,35 @@
+name: Software Factory CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Factory Tests, Verification & Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run factory CLI & hook unit tests
+        run: npm test
+
+      - name: Run deterministic verification on root workspace
+        run: node bin/agy-factory.js verify --require-tests
+
+      - name: Run deterministic verification on Task Tracker example
+        run: node bin/agy-factory.js verify --cwd examples/task-tracker --require-tests
+
+      - name: Run security & diff audit across repository
+        run: node bin/agy-factory.js audit-diff --all

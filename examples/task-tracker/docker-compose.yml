@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tasks_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tasks_password}
+      POSTGRES_DB: ${POSTGRES_DB:-tasks_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tasks_user} -d ${POSTGRES_DB:-tasks_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: ./api
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgres://${POSTGRES_USER:-tasks_user}:${POSTGRES_PASSWORD:-tasks_password}@db:5432/${POSTGRES_DB:-tasks_db}
+    ports:
+      - "${API_PORT:-4000}:4000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build: ./web
+    ports:
+      - "${WEB_PORT:-3000}:80"
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  pgdata:

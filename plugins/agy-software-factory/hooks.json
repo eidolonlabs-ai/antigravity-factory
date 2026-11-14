@@ -1,0 +1,25 @@
+{
+  "factory-pre-tool-guard": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command|write_file|edit_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./bin/pre-tool-guard.js",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "factory-stop-verify-gate": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node ./bin/stop-verify-gate.js",
+        "timeout": 15
+      }
+    ]
+  }
+}

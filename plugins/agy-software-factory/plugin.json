@@ -1,0 +1,11 @@
+{
+  "name": "agy-software-factory",
+  "displayName": "Antigravity Software Factory",
+  "version": "1.0.0",
+  "description": "End-to-end multi-agent Software Factory with parallel build orchestration, deterministic QA verification CLI, diff security auditing, and lifecycle guardrails.",
+  "suggestedPrompts": [
+    "Build a new feature end-to-end using the Software Factory pipeline",
+    "Run deterministic QA verification across all workspace components",
+    "Audit the current git diff for security issues and regressions"
+  ]
+}
