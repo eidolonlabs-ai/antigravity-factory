@@ -18,6 +18,8 @@ const MONOREPO_CONTAINER_DIRS = new Set([
   'apps',
   'packages',
   'services',
+  'libs',
+  'modules',
 ]);
 
 const COMPOSE_FILES = [
@@ -115,13 +117,16 @@ function inspectDirectory(dirPath, rootPath) {
 
   const pyprojectPath = path.join(absDir, 'pyproject.toml');
   const requirementsPath = path.join(absDir, 'requirements.txt');
+  const setupPyPath = path.join(absDir, 'setup.py');
   const hasPyproject = fs.existsSync(pyprojectPath) && fs.statSync(pyprojectPath).isFile();
   const hasRequirements = fs.existsSync(requirementsPath) && fs.statSync(requirementsPath).isFile();
-  if (hasPyproject || hasRequirements) {
+  const hasSetupPy = fs.existsSync(setupPyPath) && fs.statSync(setupPyPath).isFile();
+  if (hasPyproject || hasRequirements || hasSetupPy) {
     const commands = {};
     const pyText = [
       hasPyproject ? fs.readFileSync(pyprojectPath, 'utf8') : '',
       hasRequirements ? fs.readFileSync(requirementsPath, 'utf8') : '',
+      hasSetupPy ? fs.readFileSync(setupPyPath, 'utf8') : '',
     ].join('\n');
 
     if (/\bruff\b/i.test(pyText)) {
@@ -130,8 +135,10 @@ function inspectDirectory(dirPath, rootPath) {
     if (/\bmypy\b/i.test(pyText)) {
       commands.typecheck = 'mypy .';
     }
-    if (/\bpytest\b/i.test(pyText) || fs.existsSync(path.join(absDir, 'tests'))) {
+    if (/\bpytest\b/i.test(pyText)) {
       commands.test = 'python3 -m pytest';
+    } else if (fs.existsSync(path.join(absDir, 'tests'))) {
+      commands.test = 'python3 -m unittest discover -s tests -p "test*.py"';
     }
 
     detected.push({

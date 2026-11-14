@@ -298,6 +298,45 @@ function inspectCommandLine(commandLine) {
     const cmd = path.posix.basename(tokens[0]);
     const rest = tokens.slice(1);
 
+    // Check output redirections (> or >>) targeting protected files (.factory/**, holdout/**, .env, keys, .git)
+    for (let i = 0; i < tokens.length; i += 1) {
+      const tok = tokens[i];
+      let redirTarget = null;
+      if (tok === ">" || tok === ">>" || tok === "1>" || tok === "1>>" || tok === "&>" || tok === "&>>") {
+        redirTarget = tokens[i + 1] || null;
+      } else if (/^(?:1|&)?>>?.+/.test(tok)) {
+        redirTarget = tok.replace(/^(?:1|&)?>>?/, "");
+      }
+      if (redirTarget) {
+        const targetCheck = inspectFileTarget(redirTarget);
+        if (targetCheck.decision === "deny") {
+          return targetCheck;
+        }
+      }
+    }
+
+    // Check file-writing/deleting commands targeting .factory/** or holdout/**
+    if (
+      cmd === "rm" ||
+      cmd === "cp" ||
+      cmd === "mv" ||
+      cmd === "tee" ||
+      cmd === "touch" ||
+      cmd === "truncate"
+    ) {
+      const nonFlagArgs = rest.filter((tok) => !tok.startsWith("-"));
+      const argsToInspect =
+        cmd === "cp" && nonFlagArgs.length > 1
+          ? [nonFlagArgs[nonFlagArgs.length - 1]]
+          : nonFlagArgs;
+      for (const tok of argsToInspect) {
+        const targetCheck = inspectFileTarget(tok);
+        if (targetCheck.decision === "deny") {
+          return targetCheck;
+        }
+      }
+    }
+
     if (cmd === "rm") {
       let hasRecursive = false;
       let hasForce = false;

@@ -31,11 +31,12 @@ Review every check reported by `agy-factory verify` (`hygiene`, `docker-compose`
 
 1. **`FAIL`**: Immediate blocker. Capture the exact `command` and `output` from the failing check and fail verification.
 2. **`NOT_RUN` Is Never `PASS`**:
-   - `NOT_RUN` means no script/tool was configured (or `--skip-docker` was set)—it does **not** mean the check succeeded.
-   - Never report "all checks passed" if `test` is `NOT_RUN`. With `--require-tests`, `agy-factory verify` enforces that at least one component `test` check achieves `PASS`, setting `ok: false` and exiting non-zero otherwise.
-3. **Validate `.factory/verify-receipt.json`**:
+   - `NOT_RUN` means no script/tool was configured (or Docker CLI is not installed / `--skip-docker` was set)—it does **not** mean the check succeeded. Docker Compose validation is optional when `docker` is unavailable, reporting `NOT_RUN` without failing the build.
+   - Never report "all checks passed" if `test` is `NOT_RUN`. With `--require-tests` (or `"requireTests": true` in `.factory.json`), `agy-factory verify` enforces that at least one component `test` check achieves `PASS`, setting `ok: false` and exiting non-zero otherwise.
+3. **Validate `.factory/verify-receipt.json` & Dark Factory Guardrails**:
    - Read `<cwd>/.factory/verify-receipt.json` and confirm `"ok": true`.
-   - Note that the receipt records a `digest` of the current git status and diff. Any subsequent code edit invalidates the receipt and requires re-running `agy-factory verify` (which also satisfies the `Stop` verification gate hook when enabled).
+   - Note that `.factory/**` (receipt integrity) and `holdout/**` / `*.holdout.test.*` (holdout test suites) are protected by `pre-tool-guard.js` against direct agent edits or shell tampering.
+   - The receipt records a SHA-256 `digest` of the current git status, diff, and untracked file contents. Any subsequent code edit invalidates the receipt and requires re-running `agy-factory verify` (which also satisfies the `Stop` verification gate hook when enabled).
 
 ## Step 3: Live Web UI Verification (`browser` Subagent)
 

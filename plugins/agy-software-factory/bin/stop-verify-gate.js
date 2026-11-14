@@ -296,7 +296,7 @@ export function evaluateStop(payload, { env = process.env } = {}) {
     const rawCwd =
       Array.isArray(payload.workspacePaths) && payload.workspacePaths[0]
         ? payload.workspacePaths[0]
-        : process.cwd();
+        : payload.workspaceRoot || payload.cwd || process.cwd();
     const cwd = path.resolve(rawCwd);
 
     if (!isEnforcementEnabled(cwd, env)) {

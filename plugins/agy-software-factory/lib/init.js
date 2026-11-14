@@ -81,7 +81,8 @@ function ensureGitignoreHasFactory(gitignorePath) {
  * @param {string} [options.pluginSourceDir]
  */
 export function runInit({
-  targetDir = process.cwd(),
+  targetDir,
+  cwd,
   mode = 'link',
   pluginSourceDir,
 } = {}) {
@@ -89,7 +90,7 @@ export function runInit({
     throw new Error(`Invalid init mode "${mode}". Expected "link" or "copy".`);
   }
 
-  const resolvedTarget = path.resolve(targetDir);
+  const resolvedTarget = path.resolve(targetDir || cwd || process.cwd());
   fs.mkdirSync(resolvedTarget, { recursive: true });
 
   const { pluginDir, pluginsParentDir } = resolvePluginSource(pluginSourceDir);

@@ -83,6 +83,9 @@ const SECRET_ASSIGN_RE = new RegExp(
 
 const EVAL_RE = new RegExp(['\\beval', '\\s*\\('].join(''));
 const NEW_FUNCTION_RE = new RegExp(['\\bnew\\s+Function', '\\s*\\('].join(''));
+const SHELL_EXEC_INTERP_RE = new RegExp(
+  ['\\b(?:exec|execSync)', '\\s*\\(\\s*`[^`]*\\$', '\\{'].join('')
+);
 
 const REACT_XSS_RE = new RegExp(['\\bdangerouslySet', 'InnerHTML\\b'].join(''));
 const INNER_HTML_RE = new RegExp(['\\.innerHTML', '\\s*='].join(''));
@@ -90,6 +93,14 @@ const INNER_HTML_RE = new RegExp(['\\.innerHTML', '\\s*='].join(''));
 const SQL_SELECT_RE = new RegExp(['\\bSELECT\\b.*\\bWHERE\\b.*(?<!\\$)\\$', '\\{'].join(''), 'i');
 const SQL_VALUES_RE = new RegExp(['\\bVALUES\\s*\\(.*(?<!\\$)\\$', '\\{'].join(''), 'i');
 const SQL_DELETE_RE = new RegExp(['\\bDELETE\\s+FROM\\b.*\\bWHERE\\b.*(?<!\\$)\\$', '\\{'].join(''), 'i');
+const SQL_UPDATE_RE = new RegExp(
+  ['\\bUPDATE\\b.*\\bSET\\b.*(?:[\'"]\\s*\\$', '\\{|\\bWHERE\\b.*(?<!\\$)\\$', '\\{)'].join(''),
+  'i'
+);
+const PY_SQL_FSTRING_RE = new RegExp(
+  ['\\bf([\'"])(?:SELECT|INSERT\\s+INTO|UPDATE|DELETE\\s+FROM)\\b.*\\{.*\\1'].join(''),
+  'i'
+);
 
 function runGit(args, cwd) {
   return spawnSync('git', args, {
@@ -295,14 +306,21 @@ function scanFileLines(absPath, relPath) {
     }
 
     // 2. Dangerous dynamic code execution
-    if (EVAL_RE.test(rawLine) || NEW_FUNCTION_RE.test(rawLine)) {
+    if (
+      EVAL_RE.test(rawLine) ||
+      NEW_FUNCTION_RE.test(rawLine) ||
+      SHELL_EXEC_INTERP_RE.test(rawLine)
+    ) {
       findings.push({
         rule: 'dangerous-exec',
         severity: 'high',
         file: relPath,
         line: lineNum,
         snippet,
-        message: ['Dynamic code execution via eval', '() or Function constructor detected.'].join(''),
+        message: [
+          'Dynamic code or shell command interpolation via eval',
+          '(), Function(), or child_process exec template literal detected.',
+        ].join(''),
       });
     }
 
@@ -322,7 +340,9 @@ function scanFileLines(absPath, relPath) {
     if (
       SQL_SELECT_RE.test(rawLine) ||
       SQL_VALUES_RE.test(rawLine) ||
-      SQL_DELETE_RE.test(rawLine)
+      SQL_DELETE_RE.test(rawLine) ||
+      SQL_UPDATE_RE.test(rawLine) ||
+      PY_SQL_FSTRING_RE.test(rawLine)
     ) {
       findings.push({
         rule: 'sql-interpolation',
@@ -330,7 +350,7 @@ function scanFileLines(absPath, relPath) {
         file: relPath,
         line: lineNum,
         snippet,
-        message: 'Raw template literal interpolation inside SQL statement; use parameterized queries.',
+        message: 'Raw string/template interpolation inside SQL statement; use parameterized queries.',
       });
     }
   }

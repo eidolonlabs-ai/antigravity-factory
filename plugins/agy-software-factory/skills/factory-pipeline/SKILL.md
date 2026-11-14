@@ -48,11 +48,12 @@ When Stage 1 yields multiple independent slices, execute them concurrently using
      action: "add",
      name: "<slice-name>",
      workspace: "share",
-     brief: "You own ONLY: <Owned Files>. Do NOT touch: <Forbidden Files>. Shared contracts: <Contracts>. Implement <Spec> and verify with `<Verification Command>`. Report files changed and command output to @coordinator."
+     brief: "You own ONLY: <Owned Files>. Do NOT touch: <Forbidden Files>. Shared contracts: <Contracts>. Implement <Spec>, verify with `<Verification Command>`, and run `$FACTORY_CLI audit-diff --cwd . --allow-paths \"<Owned Files>\"` to prove slice boundary compliance. Report files changed and command output to @coordinator."
    }
    ```
+   *(If running outside Antigravity's native `swarm`, execute slices sequentially or inside isolated `git worktree` directories while still enforcing `--allow-paths` per slice.)*
 2. **Spawn an independent verifier**: Add a read-only `verifier` worker (`workspace: "inherit"`) tasked with executing Stage 3 and Stage 4 once slices land, or run Stages 3–4 directly after integrating all slices.
-3. **Wait & integrate cleanly**: Sleep via `swarm_wait` (never poll). As each builder reports green slice checks, inspect its worktree diff, integrate/land its owned files into the coordinator workspace, verify zero cross-slice file overlap, and only then terminate the worker (`swarm{action: "kill", name: "<slice-name>"}`).
+3. **Wait & integrate cleanly**: Sleep via `swarm_wait` (never poll). As each builder reports green slice checks, run `$FACTORY_CLI audit-diff --cwd <worktree> --allow-paths "<Owned Files>"` on its worktree diff, integrate/land its owned files into the coordinator workspace, verify zero cross-slice file overlap, and only then terminate the worker (`swarm{action: "kill", name: "<slice-name>"}`).
 
 ---
 

@@ -5,8 +5,8 @@ This repository develops and ships **Antigravity Software Factory** (`agy-softwa
 ## Software Factory Rules
 
 1. **Plan Before Building**: Never jump straight into multi-file edits for non-trivial tasks. Produce a clear spec with acceptance criteria, shared contracts, and explicit disjoint file ownership first (via `factory-spec-planner`, `/plan`, or `/grill-me`).
-2. **Isolate Parallel Work**: When multiple builders work in parallel via `/teamwork` (swarm), assign each worker disjoint files or modules and give each author `workspace: "share"` (or `"branch"`). Never assign two builders to the same file.
-3. **Deterministic Verification First**: Every change must pass deterministic verification (`npm test` and `node bin/agy-factory.js verify --require-tests`), never treating `NOT_RUN` as `PASS`—plus live UI checks via the `browser` subagent when touching `examples/task-tracker/web/`.
+2. **Isolate Parallel Work**: When multiple builders work in parallel via `/teamwork` (swarm), assign each worker disjoint files or modules, give each author `workspace: "share"` (or `"branch"`), and verify slice boundaries with `node bin/agy-factory.js audit-diff --allow-paths "<slice-globs>"`. Never assign two builders to the same file.
+3. **Deterministic Verification First**: Every change must pass deterministic verification (`npm test` and `node bin/agy-factory.js verify --require-tests`), never treating `NOT_RUN` as `PASS` or tampering with `.factory/verify-receipt.json` / `holdout/` tests—plus live UI checks via the `browser` subagent when touching `examples/task-tracker/web/`.
 4. **Independent Diff & Security Review**: Always run `node bin/agy-factory.js audit-diff` and perform an independent read-only semantic code & security review on `git diff` before considering a task complete.
 5. **Preserve Documentation**: Keep existing comments, docstrings, and CLI/plugin documentation intact unless directly invalidated by the change.
 

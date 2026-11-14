@@ -321,10 +321,25 @@ function ensureNodeDependenciesIfNeeded(component, resolvedCwd, baseEnv = proces
     (pkg.dependencies && Object.keys(pkg.dependencies).length > 0) ||
     (pkg.devDependencies && Object.keys(pkg.devDependencies).length > 0);
   const localNodeModules = path.join(component.path, 'node_modules');
-  const rootNodeModules = resolvedCwd ? path.join(resolvedCwd, 'node_modules') : null;
-  const hasInstalledModules =
-    fs.existsSync(localNodeModules) ||
-    (rootNodeModules && fs.existsSync(rootNodeModules));
+  let hasRootWorkspaceModules = false;
+  if (resolvedCwd && component.path !== resolvedCwd) {
+    const rootNodeModules = path.join(resolvedCwd, 'node_modules');
+    if (fs.existsSync(rootNodeModules)) {
+      const rootPkgPath = path.join(resolvedCwd, 'package.json');
+      const hasPnpmWorkspace = fs.existsSync(path.join(resolvedCwd, 'pnpm-workspace.yaml'));
+      let hasPkgWorkspaces = false;
+      if (fs.existsSync(rootPkgPath)) {
+        try {
+          const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, 'utf8'));
+          hasPkgWorkspaces = Boolean(rootPkg?.workspaces);
+        } catch {
+          hasPkgWorkspaces = false;
+        }
+      }
+      hasRootWorkspaceModules = hasPnpmWorkspace || hasPkgWorkspaces;
+    }
+  }
+  const hasInstalledModules = fs.existsSync(localNodeModules) || hasRootWorkspaceModules;
 
   if (hasDeps && !hasInstalledModules) {
     const pm = component.packageManager || 'npm';
@@ -415,8 +430,19 @@ export function runVerify({
   }
 
   // c) Per-component checks (lint, typecheck, test, build)
+  const usedCompLabels = new Set();
+  const childRelPaths = new Set(
+    project.components.filter((c) => c.relPath !== '.').map((c) => c.relPath)
+  );
   for (const component of project.components) {
-    const compLabel = component.relPath === '.' ? component.name : component.relPath;
+    let compLabel = component.relPath === '.' ? component.name : component.relPath;
+    if (component.relPath === '.' && childRelPaths.has(compLabel)) {
+      compLabel = `root:${compLabel}`;
+    }
+    if (usedCompLabels.has(compLabel)) {
+      compLabel = `${compLabel}(${component.type})`;
+    }
+    usedCompLabels.add(compLabel);
     const hasAnyConfiguredCommand = CATEGORIES.some((cat) => Boolean(component.commands?.[cat]));
     const installError = hasAnyConfiguredCommand
       ? ensureNodeDependenciesIfNeeded(component, resolvedCwd, env)
