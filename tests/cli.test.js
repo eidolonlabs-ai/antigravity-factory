@@ -422,41 +422,94 @@ test('runAuditDiff rejects option-like --base flags starting with "-" and skips 
   assert.equal(report.findings.length, 0);
 });
 
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function writeNpmWrapper(destPath, execPath, npmExecPath) {
+  const wrapper = `#!/bin/sh\nexec ${shellQuote(execPath)} ${shellQuote(npmExecPath)} "$@"\n`;
+  fs.writeFileSync(destPath, wrapper, { encoding: 'utf8', mode: 0o755 });
+  fs.chmodSync(destPath, 0o755);
+}
+
+function createDockerComposeNodeFixture(repoDir, pkgName) {
+  fs.writeFileSync(
+    path.join(repoDir, 'docker-compose.yml'),
+    'services:\n  app:\n    image: alpine:3.20\n',
+    'utf8'
+  );
+  fs.writeFileSync(
+    path.join(repoDir, 'package.json'),
+    JSON.stringify({
+      name: pkgName,
+      version: '1.0.0',
+      scripts: { test: `${JSON.stringify(process.execPath)} -e "process.exit(0)"` },
+    }),
+    'utf8'
+  );
+}
+
+function findExecutableNpm(searchDirs) {
+  for (const dir of searchDirs) {
+    if (!dir) continue;
+    const candidate = path.join(dir, 'npm');
+    try {
+      const stat = fs.statSync(candidate);
+      if (!stat.isFile()) continue;
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return candidate;
+    } catch {
+      // Try next directory in searchDirs
+    }
+  }
+  return null;
+}
+
+function provisionMinimalNodeEnv(
+  minimalBinDir,
+  {
+    nodeBinDir = path.dirname(process.execPath),
+    envPath = process.env.PATH || '',
+    execPath = process.execPath,
+    npmExecPath = process.env.npm_execpath || '',
+  } = {}
+) {
+  fs.symlinkSync(execPath, path.join(minimalBinDir, 'node'));
+  if (fs.existsSync('/bin/sh')) {
+    fs.symlinkSync('/bin/sh', path.join(minimalBinDir, 'sh'));
+  }
+
+  const searchDirs = [
+    nodeBinDir,
+    ...String(envPath).split(path.delimiter).filter(Boolean),
+  ];
+  const destNpm = path.join(minimalBinDir, 'npm');
+  const resolvedNpm = findExecutableNpm(searchDirs);
+
+  if (resolvedNpm) {
+    fs.symlinkSync(resolvedNpm, destNpm);
+  } else if (npmExecPath && fs.existsSync(npmExecPath)) {
+    writeNpmWrapper(destNpm, execPath, npmExecPath);
+  }
+
+  assert.ok(
+    fs.existsSync(destNpm),
+    `expected npm to be resolved into minimalBinDir (searched: ${searchDirs.join(', ')})`
+  );
+  return destNpm;
+}
+
 test('runVerify treats Docker Compose as optional (NOT_RUN, ok: true) when docker CLI is not on PATH', async (t) => {
   const tempRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'factory-no-docker-'));
-  const nodeBinDir = path.dirname(process.execPath);
   const minimalBinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'factory-minimal-bin-'));
   t.after(() => {
     fs.rmSync(tempRepo, { recursive: true, force: true });
     fs.rmSync(minimalBinDir, { recursive: true, force: true });
   });
 
-  // Expose node and sh/npm if needed, or just use a minimal PATH without docker
-  fs.symlinkSync(process.execPath, path.join(minimalBinDir, 'node'));
-  if (fs.existsSync('/bin/sh')) {
-    fs.symlinkSync('/bin/sh', path.join(minimalBinDir, 'sh'));
-  }
-
-  fs.writeFileSync(
-    path.join(tempRepo, 'docker-compose.yml'),
-    'services:\n  app:\n    image: alpine:3.20\n',
-    'utf8'
-  );
-  fs.writeFileSync(
-    path.join(tempRepo, 'package.json'),
-    JSON.stringify({
-      name: 'optional-docker-test',
-      version: '1.0.0',
-      scripts: { test: `${JSON.stringify(process.execPath)} -e "process.exit(0)"` },
-    }),
-    'utf8'
-  );
-
-  // Verify nodeBinDir itself doesn't contain docker, or use minimalBinDir + npm symlink
-  const npmCandidate = path.join(nodeBinDir, 'npm');
-  if (fs.existsSync(npmCandidate)) {
-    fs.symlinkSync(npmCandidate, path.join(minimalBinDir, 'npm'));
-  }
+  // Expose node, sh, and portably resolved npm without docker on PATH
+  provisionMinimalNodeEnv(minimalBinDir);
+  createDockerComposeNodeFixture(tempRepo, 'optional-docker-test');
 
   const receipt = await runVerify({
     cwd: tempRepo,
@@ -469,6 +522,84 @@ test('runVerify treats Docker Compose as optional (NOT_RUN, ok: true) when docke
   assert.equal(dockerCheck.status, 'NOT_RUN');
   assert.match(dockerCheck.output, /not installed/i);
   assert.equal(receipt.ok, true);
+});
+
+test('provisionMinimalNodeEnv resolves non-adjacent npm via PATH, npm_execpath wrapper, and fails loudly if absent', async (t) => {
+  const tempRoot = createTempDir(t);
+  const fakeNodeDir = path.join(tempRoot, 'fake-node-bin');
+  const separateNpmDir = path.join(tempRoot, 'separate-npm-bin');
+  const emptyDir = path.join(tempRoot, 'empty-bin');
+  const isolatedBinDir = path.join(tempRoot, 'isolated-bin');
+  const wrapperBinDir = path.join(tempRoot, 'wrapper-bin');
+  const missingBinDir = path.join(tempRoot, 'missing-bin');
+  const tempRepo = path.join(tempRoot, 'repo');
+
+  for (const dir of [
+    fakeNodeDir,
+    separateNpmDir,
+    emptyDir,
+    isolatedBinDir,
+    wrapperBinDir,
+    missingBinDir,
+    tempRepo,
+  ]) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  // Simulate an environment where `node` dir does not contain `npm`, and `npm` lives elsewhere on PATH
+  fs.symlinkSync(process.execPath, path.join(fakeNodeDir, 'node'));
+  const hostNpm = findExecutableNpm([
+    path.dirname(process.execPath),
+    ...(process.env.PATH || '').split(path.delimiter).filter(Boolean),
+  ]);
+  if (hostNpm) {
+    fs.symlinkSync(hostNpm, path.join(separateNpmDir, 'npm'));
+  } else if (process.env.npm_execpath && fs.existsSync(process.env.npm_execpath)) {
+    writeNpmWrapper(path.join(separateNpmDir, 'npm'), process.execPath, process.env.npm_execpath);
+  }
+
+  const destNpm = provisionMinimalNodeEnv(isolatedBinDir, {
+    nodeBinDir: fakeNodeDir,
+    envPath: separateNpmDir,
+    npmExecPath: '',
+  });
+  assert.equal(fs.lstatSync(destNpm).isSymbolicLink(), true);
+
+  createDockerComposeNodeFixture(tempRepo, 'non-adjacent-npm-test');
+
+  const receipt = await runVerify({
+    cwd: tempRepo,
+    requireTests: true,
+    env: { ...process.env, PATH: isolatedBinDir },
+  });
+  assert.equal(receipt.checks.find((c) => c.category === 'docker-compose')?.status, 'NOT_RUN');
+  assert.equal(receipt.ok, true);
+
+  // Verify npm_execpath fallback wrapper when no standalone npm binary exists
+  const fakeNpmCli = path.join(tempRoot, 'fake-npm-cli.cjs');
+  fs.writeFileSync(fakeNpmCli, 'process.exit(0);\n', 'utf8');
+  const wrappedNpm = provisionMinimalNodeEnv(wrapperBinDir, {
+    nodeBinDir: emptyDir,
+    envPath: emptyDir,
+    npmExecPath: fakeNpmCli,
+  });
+  assert.equal(fs.lstatSync(wrappedNpm).isFile(), true);
+  assert.match(fs.readFileSync(wrappedNpm, 'utf8'), /fake-npm-cli\.cjs/);
+  const wrapRes = spawnSync(wrappedNpm, ['--version'], {
+    env: { ...process.env, PATH: wrapperBinDir },
+  });
+  assert.equal(wrapRes.status, 0);
+
+  // Verify setup fails loudly if npm cannot be found anywhere
+  assert.throws(
+    () =>
+      provisionMinimalNodeEnv(missingBinDir, {
+        nodeBinDir: emptyDir,
+        envPath: emptyDir,
+        npmExecPath: '',
+      }),
+    /expected npm to be resolved into minimalBinDir/
+  );
 });
 
 test('detectProject detects pnpm/yarn/bun package managers and monorepo apps/* & packages/*', (t) => {
