@@ -552,7 +552,7 @@ test('E2E Pipeline App 5: Declarative Slice Manifest (.factory/spec.json), PreTo
     assert.equal(planRes.valid, true);
     assert.deepEqual(planRes.slices.sort(), ['api', 'web']);
 
-    // Verify overlapping slice validation catches conflicts
+    // Verify overlapping slice validation catches conflicts (directory prefixes & mid-segment/extension globs)
     const overlapCheck = validateFactorySpec({
       slices: {
         api: { allowPaths: ['api/**'] },
@@ -561,6 +561,22 @@ test('E2E Pipeline App 5: Declarative Slice Manifest (.factory/spec.json), PreTo
     });
     assert.equal(overlapCheck.valid, false);
     assert.ok(overlapCheck.errors[0].includes('Overlapping slice ownership'));
+
+    const extOverlapCheck = validateFactorySpec({
+      slices: {
+        jsSlice: { allowPaths: ['src/*.js'] },
+        entrySlice: { allowPaths: ['src/index.js'] },
+      },
+    });
+    assert.equal(extOverlapCheck.valid, false);
+
+    const disjointExtCheck = validateFactorySpec({
+      slices: {
+        jsSlice: { allowPaths: ['src/*.js'] },
+        cssSlice: { allowPaths: ['src/*.css'] },
+      },
+    });
+    assert.equal(disjointExtCheck.valid, true);
 
     // 2. Verify PreToolUse blocks out-of-slice writes when FACTORY_SLICE=api is active
     const allowedSliceWrite = evaluatePreToolUse(
@@ -638,6 +654,30 @@ test('E2E Pipeline App 5: Declarative Slice Manifest (.factory/spec.json), PreTo
       assert.equal(realLand.ok, true);
       assert.equal(fs.readFileSync(path.join(apiDir, 'server.js'), 'utf8'), 'export const v = 2;\n');
       assert.ok(!fs.existsSync(path.join(apiDir, 'old.js')));
+
+      // Commit landed baseline in main workspace, then test git mv + git commit inside worktree
+      execFileSync('git', ['add', '.'], { cwd: tempDir, stdio: 'ignore' });
+      execFileSync('git', ['commit', '-m', 'land v2'], { cwd: tempDir, stdio: 'ignore' });
+
+      // Reset worktree to new HEAD, perform git mv + git commit on worktree branch
+      execFileSync('git', ['reset', '--hard', 'HEAD'], { cwd: wtApi, stdio: 'ignore' });
+      const mainHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: tempDir, encoding: 'utf8' }).trim();
+      execFileSync('git', ['reset', '--hard', mainHead], { cwd: wtApi, stdio: 'ignore' });
+      execFileSync('git', ['mv', 'api/server.js', 'api/renamed-server.js'], { cwd: wtApi, stdio: 'ignore' });
+      fs.writeFileSync(path.join(wtApi, 'api', 'renamed-server.js'), 'export const v = 3;\n', 'utf8');
+      execFileSync('git', ['add', '.'], { cwd: wtApi, stdio: 'ignore' });
+      execFileSync('git', ['commit', '-m', 'committed rename in worktree'], { cwd: wtApi, stdio: 'ignore' });
+
+      const committedLand = runLand({
+        cwd: tempDir,
+        worktree: wtApi,
+        slice: 'api',
+      });
+      assert.equal(committedLand.ok, true);
+      assert.deepEqual(committedLand.landedFiles, ['api/renamed-server.js']);
+      assert.deepEqual(committedLand.deletedFiles, ['api/server.js']);
+      assert.equal(fs.readFileSync(path.join(apiDir, 'renamed-server.js'), 'utf8'), 'export const v = 3;\n');
+      assert.ok(!fs.existsSync(path.join(apiDir, 'server.js')));
     } finally {
       execFileSync('git', ['worktree', 'remove', '--force', wtApi], {
         cwd: tempDir,

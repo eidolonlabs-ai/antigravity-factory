@@ -77,7 +77,7 @@ flowchart LR
 └── tests/
     ├── cli.test.js                          # Unit & subprocess tests for CLI commands
     ├── hooks.test.js                        # Unit & stdin/stdout tests for PreToolUse & Stop hooks
-    └── pipeline-apps.test.js                # 7 E2E multi-stage pipeline & multi-agent test apps
+    └── pipeline-apps.test.js                # 8 E2E multi-stage pipeline & multi-agent test apps
 ```
 
 ---

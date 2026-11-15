@@ -236,7 +236,7 @@ function inspectFileTarget(rawPath) {
   const lowerBase = base.toLowerCase();
 
   if (
-    /(^|\/)holdout\//i.test(normalized) ||
+    /(^|\/)holdout(\/|$)/i.test(normalized) ||
     /\.holdout\.(test|spec)\.[a-z0-9]+$/i.test(lowerBase)
   ) {
     return {

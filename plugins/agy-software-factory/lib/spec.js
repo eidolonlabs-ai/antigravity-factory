@@ -39,26 +39,138 @@ function normalizePrefixForOverlap(pattern) {
   return clean.replace(/\/\*+$/, '').replace(/\/+$/, '');
 }
 
-function patternsOverlap(patA, patB) {
-  if (patA === patB) return true;
-  if (patA.includes('*') || patB.includes('*')) {
-    const hasWildcardSuffixA = patA.endsWith('/*') || patA.endsWith('/**') || patA === '*' || patA === '**';
-    const hasWildcardSuffixB = patB.endsWith('/*') || patB.endsWith('/**') || patB === '*' || patB === '**';
-    const prefA = normalizePrefixForOverlap(patA);
-    const prefB = normalizePrefixForOverlap(patB);
-    if (prefA === '' || prefB === '') return true;
-    if (prefA === prefB && (hasWildcardSuffixA || hasWildcardSuffixB)) return true;
-    if (hasWildcardSuffixA && prefB.startsWith(`${prefA}/`)) return true;
-    if (hasWildcardSuffixB && prefA.startsWith(`${prefB}/`)) return true;
+function globToRegExp(globPattern) {
+  let regexStr = '^';
+  for (let i = 0; i < globPattern.length; i += 1) {
+    const ch = globPattern[i];
+    if (ch === '*') {
+      if (globPattern[i + 1] === '*') {
+        regexStr += '.*';
+        i += 1;
+      } else {
+        regexStr += '[^/]*';
+      }
+    } else if (ch === '?') {
+      regexStr += '[^/]';
+    } else if ('\\.[]{}()+-^$|'.includes(ch)) {
+      regexStr += `\\${ch}`;
+    } else {
+      regexStr += ch;
+    }
+  }
+  regexStr += '$';
+  return new RegExp(regexStr);
+}
+
+function hasWildcard(str) {
+  return str.includes('*') || str.includes('?');
+}
+
+function segmentsCanOverlap(segA, segB) {
+  if (!hasWildcard(segA) && !hasWildcard(segB)) {
+    return segA === segB;
+  }
+  const reA = globToRegExp(segA);
+  const reB = globToRegExp(segB);
+  if (!hasWildcard(segA)) return reB.test(segA);
+  if (!hasWildcard(segB)) return reA.test(segB);
+
+  const firstWildA = segA.search(/[*?]/);
+  const firstWildB = segB.search(/[*?]/);
+  const prefA = segA.slice(0, firstWildA);
+  const prefB = segB.slice(0, firstWildB);
+  if (!prefA.startsWith(prefB) && !prefB.startsWith(prefA)) {
     return false;
   }
+
+  const lastWildA = Math.max(segA.lastIndexOf('*'), segA.lastIndexOf('?'));
+  const lastWildB = Math.max(segB.lastIndexOf('*'), segB.lastIndexOf('?'));
+  const sufA = segA.slice(lastWildA + 1);
+  const sufB = segB.slice(lastWildB + 1);
+  if (!sufA.endsWith(sufB) && !sufB.endsWith(sufA)) {
+    return false;
+  }
+
+  const longerPref = prefA.length >= prefB.length ? prefA : prefB;
+  const longerSuf = sufA.length >= sufB.length ? sufA : sufB;
+  const candidates = [
+    `${longerPref}${longerSuf}`,
+    `${longerPref}x${longerSuf}`,
+    `${longerPref}xx${longerSuf}`,
+  ];
+  return (
+    candidates.some((c) => reA.test(c) && reB.test(c)) ||
+    (segA.includes('*') && segB.includes('*'))
+  );
+}
+
+function patternsOverlap(patA, patB) {
+  if (patA === patB) return true;
   const cleanA = patA.replace(/\/+$/, '');
   const cleanB = patB.replace(/\/+$/, '');
-  return (
-    cleanA === cleanB ||
-    cleanA.startsWith(`${cleanB}/`) ||
-    cleanB.startsWith(`${cleanA}/`)
-  );
+  if (cleanA === cleanB) return true;
+
+  if (!hasWildcard(cleanA) && !hasWildcard(cleanB)) {
+    return (
+      cleanA.startsWith(`${cleanB}/`) || cleanB.startsWith(`${cleanA}/`)
+    );
+  }
+
+  const hasWildcardSuffixA =
+    cleanA.endsWith('/*') ||
+    cleanA.endsWith('/**') ||
+    cleanA === '*' ||
+    cleanA === '**';
+  const hasWildcardSuffixB =
+    cleanB.endsWith('/*') ||
+    cleanB.endsWith('/**') ||
+    cleanB === '*' ||
+    cleanB === '**';
+  const prefA = normalizePrefixForOverlap(cleanA);
+  const prefB = normalizePrefixForOverlap(cleanB);
+
+  if (
+    (hasWildcardSuffixA && prefA === '') ||
+    (hasWildcardSuffixB && prefB === '')
+  ) {
+    return true;
+  }
+  if (prefA === prefB && (hasWildcardSuffixA || hasWildcardSuffixB)) {
+    return true;
+  }
+  if (hasWildcardSuffixA && prefB.startsWith(`${prefA}/`)) return true;
+  if (hasWildcardSuffixB && prefA.startsWith(`${prefB}/`)) return true;
+
+  // Directory prefix vs mid-segment/extension glob inside that directory (e.g. "src" vs "src/*.js")
+  if (!hasWildcard(cleanA) && cleanB.startsWith(`${cleanA}/`)) return true;
+  if (!hasWildcard(cleanB) && cleanA.startsWith(`${cleanB}/`)) return true;
+
+  const reA = globToRegExp(cleanA);
+  const reB = globToRegExp(cleanB);
+  if (!hasWildcard(cleanA) && reB.test(cleanA)) return true;
+  if (!hasWildcard(cleanB) && reA.test(cleanB)) return true;
+
+  // Recursive "**" glob vs another glob (e.g. "**/*.test.js" vs "api/**" or "api/*.test.js")
+  if (cleanA.includes('**') || cleanB.includes('**')) {
+    const samplePaths = [
+      `${prefA || 'dir'}/${(cleanB.split('/').pop() || 'file').replace(/\*\*/g, 'x').replace(/\*/g, 'x').replace(/\?/g, 'x')}`,
+      `${prefB || 'dir'}/${(cleanA.split('/').pop() || 'file').replace(/\*\*/g, 'x').replace(/\*/g, 'x').replace(/\?/g, 'x')}`,
+    ];
+    if (samplePaths.some((s) => reA.test(s) && reB.test(s))) {
+      return true;
+    }
+  }
+
+  // Segment-by-segment glob intersection (e.g. "src/*.js" vs "src/app.*" or "src/*.ts")
+  if (!cleanA.includes('**') && !cleanB.includes('**')) {
+    const segsA = cleanA.split('/');
+    const segsB = cleanB.split('/');
+    if (segsA.length === segsB.length) {
+      return segsA.every((sA, idx) => segmentsCanOverlap(sA, segsB[idx]));
+    }
+  }
+
+  return false;
 }
 
 export function validateFactorySpec(spec) {

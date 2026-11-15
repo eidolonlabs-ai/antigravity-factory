@@ -428,6 +428,18 @@ test('PreToolUse guard blocks receipt forgery (.factory/**) and holdout test tam
   assert.equal(denyHoldoutDir.decision, 'deny');
   assert.match(denyHoldoutDir.reason, /holdout/i);
 
+  const denyBareHoldoutRm = await evaluatePreToolUse({
+    toolCall: {
+      name: 'run_command',
+      args: { CommandLine: 'rm -rf holdout' },
+    },
+    workspacePaths: ['/repo'],
+    conversationId: 'conv-dark-1',
+    stepIdx: 2,
+  });
+  assert.equal(denyBareHoldoutRm.decision, 'deny');
+  assert.match(denyBareHoldoutRm.reason, /holdout/i);
+
   const denyHoldoutSuffix = await evaluatePreToolUse({
     toolCall: {
       name: 'write_file',

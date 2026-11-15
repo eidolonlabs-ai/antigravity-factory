@@ -4,37 +4,109 @@ import { spawnSync } from 'node:child_process';
 import { runAuditDiff, matchesAllowedPath } from './audit-diff.js';
 import { normalizeAllowPathsList, resolveSliceSpec } from './spec.js';
 
-function collectWorktreeChanges(worktreeDir) {
-  const res = spawnSync('git', ['status', '--porcelain', '-z', '-uall'], {
+function resolveHeadSha(repoDir) {
+  const res = spawnSync('git', ['rev-parse', '--verify', 'HEAD'], {
+    cwd: repoDir,
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  if (res.status !== 0) return null;
+  const sha = (res.stdout || '').trim();
+  return sha || null;
+}
+
+function isFactoryPath(relPath) {
+  return relPath === '.factory' || relPath.startsWith('.factory/');
+}
+
+function collectWorktreeChanges(worktreeDir, baseSha = null) {
+  const checkRes = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], {
     cwd: worktreeDir,
     encoding: 'utf8',
-    timeout: 15_000,
-    maxBuffer: 10 * 1024 * 1024,
+    timeout: 10_000,
   });
-
-  if (res.status !== 0) {
+  if (checkRes.status !== 0) {
     throw new Error(`Worktree at "${worktreeDir}" is not a valid git working tree.`);
   }
 
   const modifiedOrAdded = [];
   const deleted = [];
-  const tokens = (res.stdout || '').split('\0');
 
-  for (let i = 0; i < tokens.length; i += 1) {
-    const entry = tokens[i];
-    if (!entry || entry.length < 4) continue;
-    const xy = entry.slice(0, 2);
-    const relPath = entry.slice(3).replace(/\\/g, '/');
-    if (xy[0] === 'R' || xy[0] === 'C') {
-      i += 1;
+  if (baseSha) {
+    const diffRes = spawnSync(
+      'git',
+      ['diff', '--name-status', '--no-renames', '-z', baseSha, '--'],
+      {
+        cwd: worktreeDir,
+        encoding: 'utf8',
+        timeout: 15_000,
+        maxBuffer: 10 * 1024 * 1024,
+      }
+    );
+    if (diffRes.status === 0 && diffRes.stdout) {
+      const tokens = diffRes.stdout.split('\0');
+      for (let i = 0; i < tokens.length; i += 2) {
+        const status = tokens[i];
+        const rawPath = tokens[i + 1];
+        if (!status || !rawPath) continue;
+        const relPath = rawPath.replace(/\\/g, '/');
+        if (isFactoryPath(relPath)) continue;
+        if (status.startsWith('D')) {
+          deleted.push(relPath);
+        } else {
+          modifiedOrAdded.push(relPath);
+        }
+      }
     }
-    if (relPath === '.factory' || relPath.startsWith('.factory/')) {
-      continue;
+
+    const untrackedRes = spawnSync(
+      'git',
+      ['ls-files', '--others', '--exclude-standard', '-z'],
+      {
+        cwd: worktreeDir,
+        encoding: 'utf8',
+        timeout: 15_000,
+        maxBuffer: 10 * 1024 * 1024,
+      }
+    );
+    if (untrackedRes.status === 0 && untrackedRes.stdout) {
+      for (const rawPath of untrackedRes.stdout.split('\0')) {
+        if (!rawPath) continue;
+        const relPath = rawPath.replace(/\\/g, '/');
+        if (isFactoryPath(relPath)) continue;
+        modifiedOrAdded.push(relPath);
+      }
     }
-    if (xy.includes('D')) {
-      deleted.push(relPath);
-    } else {
-      modifiedOrAdded.push(relPath);
+  } else {
+    const res = spawnSync('git', ['status', '--porcelain', '-z', '-uall'], {
+      cwd: worktreeDir,
+      encoding: 'utf8',
+      timeout: 15_000,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    const tokens = (res.stdout || '').split('\0');
+    for (let i = 0; i < tokens.length; i += 1) {
+      const entry = tokens[i];
+      if (!entry || entry.length < 4) continue;
+      const xy = entry.slice(0, 2);
+      const relPath = entry.slice(3).replace(/\\/g, '/');
+      if (xy[0] === 'R') {
+        const origPath = (tokens[i + 1] || '').replace(/\\/g, '/');
+        i += 1;
+        if (origPath && !isFactoryPath(origPath)) {
+          deleted.push(origPath);
+        }
+      } else if (xy[0] === 'C') {
+        i += 1;
+      }
+      if (isFactoryPath(relPath)) {
+        continue;
+      }
+      if (xy.includes('D')) {
+        deleted.push(relPath);
+      } else {
+        modifiedOrAdded.push(relPath);
+      }
     }
   }
 
@@ -87,12 +159,18 @@ export function runLand({
     );
   }
 
+  const targetHeadSha = resolveHeadSha(resolvedCwd);
+
   const audit = runAuditDiff({
     cwd: resolvedWorktree,
+    base: targetHeadSha,
     allowPaths: effectiveAllowPaths,
   });
 
-  const { modifiedOrAdded, deleted } = collectWorktreeChanges(resolvedWorktree);
+  const { modifiedOrAdded, deleted } = collectWorktreeChanges(
+    resolvedWorktree,
+    targetHeadSha
+  );
 
   for (const relDelete of deleted) {
     if (!matchesAllowedPath(relDelete, effectiveAllowPaths)) {
