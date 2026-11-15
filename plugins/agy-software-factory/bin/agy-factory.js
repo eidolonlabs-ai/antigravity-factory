@@ -165,8 +165,17 @@ function formatInitHuman(res) {
   if (res.claudeSettingsPath) {
     lines.push(`  Claude Settings  : ${res.claudeSettingsPath}`);
   }
+  if (res.claudeMdPath) {
+    lines.push(`  Claude Rules     : ${res.claudeMdPath}`);
+  }
   if (res.geminiSettingsPath) {
     lines.push(`  Gemini Settings  : ${res.geminiSettingsPath}`);
+  }
+  if (res.geminiMdPath) {
+    lines.push(`  Gemini Rules     : ${res.geminiMdPath}`);
+  }
+  if (res.agentsMdPath) {
+    lines.push(`  Agents Rules     : ${res.agentsMdPath}`);
   }
   if (res.gitPreCommitPath) {
     lines.push(`  Git Pre-Commit   : ${res.gitPreCommitPath}`);

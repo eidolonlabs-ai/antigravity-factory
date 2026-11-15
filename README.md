@@ -360,9 +360,9 @@ node bin/agy-factory.js init /path/to/your-repo --mode copy --target all
 ```
 
 - **Antigravity (`--target agy`)**: Writes `.agents/plugins.json` and `.factory.json`.
-- **Claude Code (`--target claude`)**: Writes `.claude/settings.json` (`PreToolUse` & `Stop` hooks) and `CLAUDE.md` (`@AGENTS.md`).
-- **Gemini CLI (`--target gemini`)**: Writes `.gemini/settings.json` (`BeforeTool` & `AfterAgent` hooks).
-- **Codex / Git (`--target codex`)**: Writes `.git/hooks/pre-commit` (`chmod 0755`) running `agy-factory audit-diff` and `agy-factory verify`.
+- **Claude Code (`--target claude`)**: Non-destructively merges `PreToolUse` & `Stop` hooks into `.claude/settings.json` and scaffolds `CLAUDE.md` (importing workspace rules and referencing the 4 stage skills).
+- **Gemini CLI (`--target gemini`)**: Non-destructively merges `BeforeTool` & `AfterAgent` hooks into `.gemini/settings.json` and scaffolds `GEMINI.md` (importing workspace rules and referencing the 4 stage skills).
+- **Codex / Git (`--target codex`)**: Installs `.git/hooks/pre-commit` (`chmod 0755`, supporting standard repos, `git worktree`, and submodules) running `agy-factory audit-diff` and `agy-factory verify`, and scaffolds root `AGENTS.md` if missing.
 
 ---
 

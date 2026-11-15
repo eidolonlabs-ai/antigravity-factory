@@ -855,9 +855,20 @@ test('E2E Pipeline App 8: Non-destructive init merging, git worktrees, CLAUDE.md
     assert.equal(geminiSettings.hooks.BeforeTool.length, 1);
     assert.equal(geminiSettings.hooks.AfterAgent.length, 1);
 
-    // External repo without root AGENTS.md points CLAUDE.md at bundled plugin rules
+    // External repo without root AGENTS.md points CLAUDE.md and GEMINI.md at bundled plugin rules, and scaffolds AGENTS.md for Codex
     const claudeMd = fs.readFileSync(path.join(tempDir, 'CLAUDE.md'), 'utf8');
     assert.ok(claudeMd.includes('@.agents/plugins/agy-software-factory/rules/AGENTS.md'));
+    assert.ok(claudeMd.includes('factory-pipeline/SKILL.md'));
+
+    assert.ok(secondInit.geminiMdPath);
+    const geminiMd = fs.readFileSync(secondInit.geminiMdPath, 'utf8');
+    assert.ok(geminiMd.includes('@.agents/plugins/agy-software-factory/rules/AGENTS.md'));
+    assert.ok(geminiMd.includes('factory-qa-verifier/SKILL.md'));
+
+    assert.ok(secondInit.agentsMdPath);
+    const codexAgentsMd = fs.readFileSync(secondInit.agentsMdPath, 'utf8');
+    assert.ok(codexAgentsMd.includes('multi-agent Software Factory'));
+    assert.ok(codexAgentsMd.includes('factory-security-reviewer/SKILL.md'));
 
     // Custom pre-commit hook preserved alongside factory gate lines
     const preCommitText = fs.readFileSync(secondInit.gitPreCommitPath, 'utf8');

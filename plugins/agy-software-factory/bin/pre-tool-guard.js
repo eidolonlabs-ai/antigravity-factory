@@ -561,10 +561,15 @@ export function evaluatePreToolUse(payload, { env = process.env } = {}) {
       toolName === "Write" ||
       toolName === "Edit" ||
       toolName === "MultiEdit" ||
-      toolName === "replace";
+      toolName === "replace" ||
+      toolName === "write" ||
+      toolName === "edit" ||
+      toolName === "create_file" ||
+      toolName === "insert_edit_into_file";
 
     if (isFileWriteTool) {
-      const targetPath =
+      const candidatePaths = [];
+      const topPath =
         args.Path ??
         args.TargetFile ??
         args.path ??
@@ -572,19 +577,45 @@ export function evaluatePreToolUse(payload, { env = process.env } = {}) {
         args.file_path ??
         args.filePath ??
         "";
-      const fileDecision = inspectFileTarget(targetPath);
-      if (fileDecision.decision !== "allow") {
-        return fileDecision;
+      if (topPath) {
+        candidatePaths.push(topPath);
+      }
+      if (Array.isArray(args.edits)) {
+        for (const editItem of args.edits) {
+          if (editItem && typeof editItem === "object") {
+            const p =
+              editItem.file_path ??
+              editItem.filePath ??
+              editItem.path ??
+              editItem.Path ??
+              "";
+            if (p) candidatePaths.push(p);
+          }
+        }
       }
 
       const activeSlice = env?.FACTORY_SLICE || payload.slice || null;
-      if (activeSlice) {
-        const workspaceRoot =
-          (Array.isArray(payload.workspacePaths) && payload.workspacePaths[0]) ||
-          payload.workspaceRoot ||
-          payload.cwd ||
-          process.cwd();
-        return inspectSliceOwnership(targetPath, workspaceRoot, activeSlice);
+      const workspaceRoot =
+        (Array.isArray(payload.workspacePaths) && payload.workspacePaths[0]) ||
+        payload.workspaceRoot ||
+        payload.cwd ||
+        process.cwd();
+
+      for (const targetPath of candidatePaths) {
+        const fileDecision = inspectFileTarget(targetPath);
+        if (fileDecision.decision !== "allow") {
+          return fileDecision;
+        }
+        if (activeSlice) {
+          const sliceDecision = inspectSliceOwnership(
+            targetPath,
+            workspaceRoot,
+            activeSlice
+          );
+          if (sliceDecision.decision !== "allow") {
+            return sliceDecision;
+          }
+        }
       }
 
       return { decision: "allow" };
@@ -593,7 +624,10 @@ export function evaluatePreToolUse(payload, { env = process.env } = {}) {
     const isCommandTool =
       toolName === "run_command" ||
       toolName === "Bash" ||
-      toolName === "run_shell_command";
+      toolName === "bash" ||
+      toolName === "run_shell_command" ||
+      toolName === "shell" ||
+      toolName === "execute_command";
 
     if (isCommandTool) {
       const commandLine =

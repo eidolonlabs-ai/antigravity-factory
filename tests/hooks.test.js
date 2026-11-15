@@ -589,6 +589,24 @@ test('Defense-in-depth: Stop executionNum ceiling and PreToolUse shell FACTORY_S
   );
   assert.equal(blockedCp.decision, 'deny');
 
+  // Claude Code MultiEdit with per-item edits[].file_path out-of-slice or .env is blocked
+  const blockedMultiEditSlice = evaluatePreToolUse(
+    {
+      cwd: tempRepo,
+      hook_event_name: 'PreToolUse',
+      tool_name: 'MultiEdit',
+      tool_input: {
+        edits: [
+          { file_path: path.join(tempRepo, 'api', 'ok.js'), old_string: 'a', new_string: 'b' },
+          { file_path: path.join(tempRepo, 'web', 'forbidden.js'), old_string: 'a', new_string: 'b' },
+        ],
+      },
+    },
+    { env: sliceEnv }
+  );
+  assert.equal(blockedMultiEditSlice.decision, 'deny');
+  assert.match(blockedMultiEditSlice.reason, /out-of-slice/i);
+
   // Shell redirection to in-slice file, /dev/null, and fd duplication (1>&2) are allowed
   const allowedInSlice = evaluatePreToolUse(
     {
