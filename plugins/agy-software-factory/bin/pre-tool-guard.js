@@ -269,7 +269,7 @@ function inspectFileTarget(rawPath) {
   return { decision: "allow" };
 }
 
-function inspectCommandLine(commandLine) {
+function inspectCommandLine(commandLine, { workspaceRoot, activeSlice } = {}) {
   if (!commandLine || typeof commandLine !== "string") {
     return { decision: "allow" };
   }
@@ -298,7 +298,7 @@ function inspectCommandLine(commandLine) {
     const cmd = path.posix.basename(tokens[0]);
     const rest = tokens.slice(1);
 
-    // Check output redirections (> or >>) targeting protected files (.factory/**, holdout/**, .env, keys, .git)
+    // Check output redirections (> or >>) targeting protected files (.factory/**, holdout/**, .env, keys, .git) or out-of-slice paths
     for (let i = 0; i < tokens.length; i += 1) {
       const tok = tokens[i];
       let redirTarget = null;
@@ -307,15 +307,21 @@ function inspectCommandLine(commandLine) {
       } else if (/^(?:1|&)?>>?.+/.test(tok)) {
         redirTarget = tok.replace(/^(?:1|&)?>>?/, "");
       }
-      if (redirTarget) {
+      if (redirTarget && !redirTarget.startsWith("&")) {
         const targetCheck = inspectFileTarget(redirTarget);
         if (targetCheck.decision === "deny") {
           return targetCheck;
         }
+        if (activeSlice) {
+          const sliceCheck = inspectSliceOwnership(redirTarget, workspaceRoot, activeSlice);
+          if (sliceCheck.decision === "deny") {
+            return sliceCheck;
+          }
+        }
       }
     }
 
-    // Check file-writing/deleting commands targeting .factory/** or holdout/**
+    // Check file-writing/deleting commands targeting .factory/**, holdout/**, or out-of-slice paths
     if (
       cmd === "rm" ||
       cmd === "cp" ||
@@ -333,6 +339,12 @@ function inspectCommandLine(commandLine) {
         const targetCheck = inspectFileTarget(tok);
         if (targetCheck.decision === "deny") {
           return targetCheck;
+        }
+        if (activeSlice) {
+          const sliceCheck = inspectSliceOwnership(tok, workspaceRoot, activeSlice);
+          if (sliceCheck.decision === "deny") {
+            return sliceCheck;
+          }
         }
       }
     }
@@ -586,13 +598,59 @@ export function evaluatePreToolUse(payload, { env = process.env } = {}) {
     if (isCommandTool) {
       const commandLine =
         args.CommandLine ?? args.commandLine ?? args.command ?? "";
-      return inspectCommandLine(commandLine);
+      const activeSlice = env?.FACTORY_SLICE || payload.slice || null;
+      const workspaceRoot =
+        (Array.isArray(payload.workspacePaths) && payload.workspacePaths[0]) ||
+        payload.workspaceRoot ||
+        payload.cwd ||
+        process.cwd();
+      return inspectCommandLine(commandLine, { workspaceRoot, activeSlice });
     }
 
     return { decision: "allow" };
   } catch {
     return { decision: "allow" };
   }
+}
+
+export function formatPreToolUseWireOutput(result, payload) {
+  const safeResult =
+    result && typeof result === "object" ? result : { decision: "allow" };
+  if (!payload || typeof payload !== "object") {
+    return safeResult;
+  }
+
+  if (payload.hook_event_name === "BeforeTool") {
+    if (safeResult.decision === "force_ask") {
+      return safeResult.reason
+        ? { decision: "ask", reason: safeResult.reason }
+        : { decision: "ask" };
+    }
+    return safeResult;
+  }
+
+  const isClaudeCode =
+    payload.hook_event_name === "PreToolUse" ||
+    (payload.tool_input !== undefined && !payload.toolCall);
+
+  if (isClaudeCode) {
+    const permissionDecision =
+      safeResult.decision === "deny"
+        ? "deny"
+        : safeResult.decision === "force_ask"
+          ? "ask"
+          : "allow";
+    const hookSpecificOutput = {
+      hookEventName: "PreToolUse",
+      permissionDecision,
+    };
+    if (safeResult.reason) {
+      hookSpecificOutput.permissionDecisionReason = safeResult.reason;
+    }
+    return { hookSpecificOutput };
+  }
+
+  return safeResult;
 }
 
 async function readStdin() {
@@ -626,7 +684,8 @@ if (isMainModule()) {
       }
       const payload = JSON.parse(trimmed);
       const result = evaluatePreToolUse(payload);
-      process.stdout.write(`${JSON.stringify(result)}\n`);
+      const wireOutput = formatPreToolUseWireOutput(result, payload);
+      process.stdout.write(`${JSON.stringify(wireOutput)}\n`);
     })
     .catch(() => {
       process.stdout.write(`${JSON.stringify({ decision: "allow" })}\n`);

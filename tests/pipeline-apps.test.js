@@ -800,3 +800,136 @@ test('E2E Pipeline App 7: Cross-Agent Portability (init --target all), Claude/Ge
     }
   });
 });
+
+test('E2E Pipeline App 8: Non-destructive init merging, git worktrees, CLAUDE.md rule path, and Twin CLI bounds', async () => {
+  withTempDir('agy-e2e-init-worktree-', (tempDir) => {
+    initGitRepo(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'index.js'), 'export const ok = true;\n', 'utf8');
+    execFileSync('git', ['add', '.'], { cwd: tempDir, stdio: 'ignore' });
+    execFileSync('git', ['commit', '-m', 'initial'], { cwd: tempDir, stdio: 'ignore' });
+
+    // Pre-populate .claude/settings.json, .gemini/settings.json, and custom pre-commit hook
+    fs.mkdirSync(path.join(tempDir, '.claude'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tempDir, '.claude', 'settings.json'),
+      JSON.stringify({
+        permissions: { allow: ['Read'] },
+        hooks: {
+          Notification: [{ matcher: '*', hooks: [{ type: 'command', command: 'echo notify' }] }],
+        },
+      }),
+      'utf8'
+    );
+
+    fs.mkdirSync(path.join(tempDir, '.gemini'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tempDir, '.gemini', 'settings.json'),
+      JSON.stringify({
+        mcpServers: { existingServer: { command: 'node', args: ['mcp.js'] } },
+      }),
+      'utf8'
+    );
+
+    const hooksDir = path.join(tempDir, '.git', 'hooks');
+    fs.mkdirSync(hooksDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(hooksDir, 'pre-commit'),
+      '#!/usr/bin/env sh\necho "existing-check"\n',
+      { encoding: 'utf8', mode: 0o755 }
+    );
+
+    // Run init twice to verify non-destructive merge AND idempotency
+    runInit({ cwd: tempDir, mode: 'copy', target: 'all' });
+    const secondInit = runInit({ cwd: tempDir, mode: 'copy', target: 'all' });
+
+    const claudeSettings = JSON.parse(fs.readFileSync(secondInit.claudeSettingsPath, 'utf8'));
+    assert.deepEqual(claudeSettings.permissions, { allow: ['Read'] });
+    assert.equal(claudeSettings.hooks.Notification.length, 1);
+    assert.equal(claudeSettings.hooks.PreToolUse.length, 1);
+    assert.equal(claudeSettings.hooks.Stop.length, 1);
+
+    const geminiSettings = JSON.parse(fs.readFileSync(secondInit.geminiSettingsPath, 'utf8'));
+    assert.deepEqual(geminiSettings.mcpServers, {
+      existingServer: { command: 'node', args: ['mcp.js'] },
+    });
+    assert.equal(geminiSettings.hooks.BeforeTool.length, 1);
+    assert.equal(geminiSettings.hooks.AfterAgent.length, 1);
+
+    // External repo without root AGENTS.md points CLAUDE.md at bundled plugin rules
+    const claudeMd = fs.readFileSync(path.join(tempDir, 'CLAUDE.md'), 'utf8');
+    assert.ok(claudeMd.includes('@.agents/plugins/agy-software-factory/rules/AGENTS.md'));
+
+    // Custom pre-commit hook preserved alongside factory gate lines
+    const preCommitText = fs.readFileSync(secondInit.gitPreCommitPath, 'utf8');
+    assert.ok(preCommitText.includes('echo "existing-check"'));
+    assert.ok(preCommitText.includes('agy-factory.js'));
+
+    // Verify git worktree (.git file with gitdir:) support without ENOTDIR
+    const wtDir = path.join(tempDir, '..', `wt-init-${Date.now()}`);
+    try {
+      execFileSync('git', ['worktree', 'add', '-b', 'wt-codex-branch', wtDir], {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+      assert.equal(fs.statSync(path.join(wtDir, '.git')).isFile(), true);
+      const wtInit = runInit({ cwd: wtDir, mode: 'copy', target: 'codex' });
+      assert.ok(wtInit.gitPreCommitPath);
+      assert.ok(fs.existsSync(wtInit.gitPreCommitPath));
+    } finally {
+      execFileSync('git', ['worktree', 'remove', '--force', wtDir], {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+    }
+  });
+
+  // Verify Twin maxBodyBytes (HTTP 413), CLI --port validation, and EADDRINUSE handling
+  const boundedTwin = createTwinServer({
+    maxBodyBytes: 32,
+    routes: [{ method: 'POST', path: '/upload', response: { ok: true } }],
+  });
+  const started = await boundedTwin.listen(0);
+  try {
+    const okRes = await fetch(`${started.url}/upload`, {
+      method: 'POST',
+      body: JSON.stringify({ tiny: 1 }),
+    });
+    assert.equal(okRes.status, 200);
+
+    const tooBigRes = await fetch(`${started.url}/upload`, {
+      method: 'POST',
+      body: 'x'.repeat(128),
+    });
+    assert.equal(tooBigRes.status, 413);
+    const errBody = await tooBigRes.json();
+    assert.equal(errBody.error, 'Payload Too Large');
+
+    // Synchronous --port validation in runCli
+    let errBuf = '';
+    const errIo = {
+      stdout: { write: () => {} },
+      stderr: { write: (s) => { errBuf += s; } },
+    };
+    assert.equal(runCli(['twin', '--port', 'not-a-port'], errIo), 1);
+    assert.match(errBuf, /Invalid --port/i);
+    assert.equal(runCli(['twin', '--port', '70000'], errIo), 1);
+
+    // Subprocess EADDRINUSE on occupied port exits cleanly with code 1 (no UnhandledPromiseRejection)
+    const cliBin = path.resolve('bin/agy-factory.js');
+    let occupiedErr = null;
+    try {
+      execFileSync(process.execPath, [cliBin, 'twin', '--port', String(started.port)], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (e) {
+      occupiedErr = e;
+    }
+    assert.ok(occupiedErr, 'Expected twin CLI on occupied port to exit non-zero');
+    assert.equal(occupiedErr.status, 1);
+    assert.match(occupiedErr.stderr, /EADDRINUSE/i);
+    assert.doesNotMatch(occupiedErr.stderr, /UnhandledPromiseRejection/);
+  } finally {
+    await started.close();
+  }
+});

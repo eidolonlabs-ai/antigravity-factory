@@ -451,3 +451,154 @@ test('PreToolUse guard blocks receipt forgery (.factory/**) and holdout test tam
   });
   assert.equal(allowNormalTest.decision, 'allow');
 });
+
+test('Hook CLI wire output translates accurately for Antigravity, Claude Code, and Gemini CLI', (t) => {
+  const tempRepo = createDirtyGitRepo(t);
+  const enforcedEnv = { ...process.env, FACTORY_ENFORCE_STOP: '1' };
+
+  // 1. Claude Code PreToolUse wire format
+  const claudeDeny = runHookProcess(PRE_TOOL_BIN, {
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Write',
+    tool_input: { file_path: '.env' },
+  });
+  assert.equal(claudeDeny.hookSpecificOutput?.hookEventName, 'PreToolUse');
+  assert.equal(claudeDeny.hookSpecificOutput?.permissionDecision, 'deny');
+  assert.match(claudeDeny.hookSpecificOutput?.permissionDecisionReason, /\.env/i);
+
+  const claudeAsk = runHookProcess(PRE_TOOL_BIN, {
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Bash',
+    tool_input: { command: 'git reset --hard HEAD~1' },
+  });
+  assert.equal(claudeAsk.hookSpecificOutput?.permissionDecision, 'ask');
+
+  const claudeAllow = runHookProcess(PRE_TOOL_BIN, {
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Write',
+    tool_input: { file_path: 'src/index.js' },
+  });
+  assert.equal(claudeAllow.hookSpecificOutput?.permissionDecision, 'allow');
+
+  // 2. Gemini CLI BeforeTool wire format
+  const geminiAsk = runHookProcess(PRE_TOOL_BIN, {
+    hook_event_name: 'BeforeTool',
+    tool_name: 'run_shell_command',
+    tool_input: { command: 'git push --force origin main' },
+  });
+  assert.equal(geminiAsk.decision, 'ask');
+  assert.match(geminiAsk.reason, /force/i);
+
+  // 3. Claude Code Stop & Gemini CLI AfterAgent wire format ("block" vs Antigravity "continue")
+  const claudeStopBlock = runHookProcess(
+    STOP_GATE_BIN,
+    {
+      hook_event_name: 'Stop',
+      stop_hook_active: false,
+      cwd: tempRepo,
+      session_id: 'claude-stop-1',
+    },
+    enforcedEnv
+  );
+  assert.equal(claudeStopBlock.decision, 'block');
+  assert.match(claudeStopBlock.reason, /verify/i);
+
+  const claudeStopAllow = runHookProcess(
+    STOP_GATE_BIN,
+    {
+      hook_event_name: 'Stop',
+      stop_hook_active: true,
+      cwd: tempRepo,
+      session_id: 'claude-stop-1',
+    },
+    enforcedEnv
+  );
+  assert.deepEqual(claudeStopAllow, {});
+
+  // Mutate file so stateHash is fresh for Gemini AfterAgent test
+  fs.writeFileSync(path.join(tempRepo, 'app.js'), 'export const value = 3;\n', 'utf8');
+  const geminiStopBlock = runHookProcess(
+    STOP_GATE_BIN,
+    {
+      hook_event_name: 'AfterAgent',
+      cwd: tempRepo,
+      session_id: 'gemini-stop-1',
+    },
+    enforcedEnv
+  );
+  assert.equal(geminiStopBlock.decision, 'block');
+});
+
+test('Defense-in-depth: Stop executionNum ceiling and PreToolUse shell FACTORY_SLICE enforcement', (t) => {
+  const tempRepo = createDirtyGitRepo(t);
+  const enforcedEnv = { ...process.env, FACTORY_ENFORCE_STOP: '1' };
+
+  // executionNum >= 3 must allow stop even on fresh unverified dirty state
+  const cappedStop = evaluateStop(
+    {
+      terminationReason: 'NO_TOOL_CALL',
+      fullyIdle: true,
+      executionNum: 3,
+      workspacePaths: [tempRepo],
+      conversationId: 'conv-exec-cap',
+    },
+    { env: enforcedEnv }
+  );
+  assert.equal(cappedStop.decision, 'allow');
+
+  // Configure .factory/spec.json with disjoint slices
+  fs.mkdirSync(path.join(tempRepo, '.factory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tempRepo, '.factory', 'spec.json'),
+    JSON.stringify({
+      version: 1,
+      slices: {
+        api: { allowPaths: ['api/**'] },
+        web: { allowPaths: ['web/**'] },
+      },
+    }),
+    'utf8'
+  );
+
+  const sliceEnv = { ...process.env, FACTORY_SLICE: 'api' };
+
+  // Shell redirection to out-of-slice file is blocked
+  const blockedRedir = evaluatePreToolUse(
+    {
+      workspacePaths: [tempRepo],
+      toolCall: {
+        name: 'run_command',
+        args: { CommandLine: 'echo "export const x = 1;" > web/app.js' },
+      },
+    },
+    { env: sliceEnv }
+  );
+  assert.equal(blockedRedir.decision, 'deny');
+  assert.match(blockedRedir.reason, /out-of-slice/i);
+
+  // Shell cp/rm/tee to out-of-slice file is blocked
+  const blockedCp = evaluatePreToolUse(
+    {
+      workspacePaths: [tempRepo],
+      toolCall: {
+        name: 'run_command',
+        args: { CommandLine: 'cp api/server.js web/copied.js' },
+      },
+    },
+    { env: sliceEnv }
+  );
+  assert.equal(blockedCp.decision, 'deny');
+
+  // Shell redirection to in-slice file, /dev/null, and fd duplication (1>&2) are allowed
+  const allowedInSlice = evaluatePreToolUse(
+    {
+      workspacePaths: [tempRepo],
+      toolCall: {
+        name: 'run_command',
+        args: { CommandLine: 'echo "ok" > api/generated.js && echo "warn" 1>&2 && ls > /dev/null' },
+      },
+    },
+    { env: sliceEnv }
+  );
+  assert.equal(allowedInSlice.decision, 'allow');
+});

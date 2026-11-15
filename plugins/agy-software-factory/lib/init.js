@@ -93,37 +93,71 @@ function parseTargets(rawTarget = 'agy') {
   return new Set(list);
 }
 
+function upsertHookSettingsJson(settingsPath, eventEntries) {
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+
+  let settings = {};
+  if (fs.existsSync(settingsPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        settings = { ...parsed };
+      }
+    } catch {
+      settings = {};
+    }
+  }
+
+  const hooksObj =
+    settings.hooks && typeof settings.hooks === 'object' && !Array.isArray(settings.hooks)
+      ? { ...settings.hooks }
+      : {};
+
+  for (const [eventName, { matcher, command }] of eventEntries) {
+    const existingList = Array.isArray(hooksObj[eventName])
+      ? [...hooksObj[eventName]]
+      : [];
+    const alreadyRegistered = existingList.some(
+      (entry) =>
+        entry &&
+        typeof entry === 'object' &&
+        Array.isArray(entry.hooks) &&
+        entry.hooks.some((h) => h && typeof h === 'object' && h.command === command)
+    );
+    if (!alreadyRegistered) {
+      existingList.push({
+        matcher,
+        hooks: [{ type: 'command', command }],
+      });
+    }
+    hooksObj[eventName] = existingList;
+  }
+
+  settings.hooks = hooksObj;
+  fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
+}
+
 function writeClaudeConfig(resolvedTarget, hookDirRef) {
   const claudeDir = path.join(resolvedTarget, '.claude');
-  fs.mkdirSync(claudeDir, { recursive: true });
   const settingsPath = path.join(claudeDir, 'settings.json');
   const guardCmd = `node "${path.join(hookDirRef, 'bin', 'pre-tool-guard.js')}"`;
   const stopCmd = `node "${path.join(hookDirRef, 'bin', 'stop-verify-gate.js')}"`;
 
-  const settings = {
-    hooks: {
-      PreToolUse: [
-        {
-          matcher: 'Write|Edit|MultiEdit|Bash',
-          hooks: [{ type: 'command', command: guardCmd }],
-        },
-      ],
-      Stop: [
-        {
-          matcher: '*',
-          hooks: [{ type: 'command', command: stopCmd }],
-        },
-      ],
-    },
-  };
-  fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
+  upsertHookSettingsJson(settingsPath, [
+    ['PreToolUse', { matcher: 'Write|Edit|MultiEdit|Bash', command: guardCmd }],
+    ['Stop', { matcher: '*', command: stopCmd }],
+  ]);
 
   const claudeMdPath = path.join(resolvedTarget, 'CLAUDE.md');
   if (!fs.existsSync(claudeMdPath)) {
+    const hasRootAgentsMd = fs.existsSync(path.join(resolvedTarget, 'AGENTS.md'));
+    const rulesImport = hasRootAgentsMd
+      ? '@AGENTS.md'
+      : `@${path.posix.join(hookDirRef.split(path.sep).join('/'), 'rules', 'AGENTS.md')}`;
     const claudeMd = [
       '# Claude Code — Software Factory Instructions',
       '',
-      '@AGENTS.md',
+      rulesImport,
       '',
       '- Before multi-file edits, inspect or validate `.factory/spec.json` (`agy-factory plan`).',
       '- Run `agy-factory verify --require-tests` and `agy-factory audit-diff` before finishing.',
@@ -136,46 +170,70 @@ function writeClaudeConfig(resolvedTarget, hookDirRef) {
 
 function writeGeminiConfig(resolvedTarget, hookDirRef) {
   const geminiDir = path.join(resolvedTarget, '.gemini');
-  fs.mkdirSync(geminiDir, { recursive: true });
   const settingsPath = path.join(geminiDir, 'settings.json');
   const guardCmd = `node "${path.join(hookDirRef, 'bin', 'pre-tool-guard.js')}"`;
   const stopCmd = `node "${path.join(hookDirRef, 'bin', 'stop-verify-gate.js')}"`;
 
-  const settings = {
-    hooks: {
-      BeforeTool: [
-        {
-          matcher: '.*',
-          hooks: [{ type: 'command', command: guardCmd }],
-        },
-      ],
-      AfterAgent: [
-        {
-          matcher: '.*',
-          hooks: [{ type: 'command', command: stopCmd }],
-        },
-      ],
-    },
-  };
-  fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
+  upsertHookSettingsJson(settingsPath, [
+    ['BeforeTool', { matcher: '.*', command: guardCmd }],
+    ['AfterAgent', { matcher: '.*', command: stopCmd }],
+  ]);
   return settingsPath;
 }
 
+function resolveGitHooksDir(resolvedTarget) {
+  const dotGitPath = path.join(resolvedTarget, '.git');
+  if (!fs.existsSync(dotGitPath)) {
+    return null;
+  }
+  const stat = fs.statSync(dotGitPath);
+  if (stat.isDirectory()) {
+    return path.join(dotGitPath, 'hooks');
+  }
+  if (stat.isFile()) {
+    const content = fs.readFileSync(dotGitPath, 'utf8');
+    const match = content.match(/^gitdir:\s*(.+)$/m);
+    if (!match) {
+      return null;
+    }
+    const gitDir = path.resolve(resolvedTarget, match[1].trim());
+    const commonDirFile = path.join(gitDir, 'commondir');
+    if (fs.existsSync(commonDirFile)) {
+      const commonRel = fs.readFileSync(commonDirFile, 'utf8').trim();
+      if (commonRel) {
+        return path.join(path.resolve(gitDir, commonRel), 'hooks');
+      }
+    }
+    return path.join(gitDir, 'hooks');
+  }
+  return null;
+}
+
 function writeGitPreCommitHook(resolvedTarget, hookDirRef) {
-  const gitHooksDir = path.join(resolvedTarget, '.git', 'hooks');
-  if (!fs.existsSync(path.join(resolvedTarget, '.git'))) {
+  const gitHooksDir = resolveGitHooksDir(resolvedTarget);
+  if (!gitHooksDir) {
     return null;
   }
   fs.mkdirSync(gitHooksDir, { recursive: true });
   const preCommitPath = path.join(gitHooksDir, 'pre-commit');
   const cliPath = path.join(hookDirRef, 'bin', 'agy-factory.js');
-  const script = [
-    '#!/usr/bin/env sh',
-    'set -e',
+  const gateLines = [
     `node "${cliPath}" audit-diff --cwd "."`,
     `node "${cliPath}" verify --cwd "."`,
-    '',
-  ].join('\n');
+  ];
+
+  if (fs.existsSync(preCommitPath)) {
+    const existing = fs.readFileSync(preCommitPath, 'utf8');
+    if (!existing.includes('agy-factory.js')) {
+      const sep = existing.endsWith('\n') ? '' : '\n';
+      const updated = `${existing}${sep}${gateLines.join('\n')}\n`;
+      fs.writeFileSync(preCommitPath, updated, { encoding: 'utf8', mode: 0o755 });
+      fs.chmodSync(preCommitPath, 0o755);
+    }
+    return preCommitPath;
+  }
+
+  const script = ['#!/usr/bin/env sh', 'set -e', ...gateLines, ''].join('\n');
   fs.writeFileSync(preCommitPath, script, { encoding: 'utf8', mode: 0o755 });
   fs.chmodSync(preCommitPath, 0o755);
   return preCommitPath;

@@ -380,15 +380,33 @@ export function runCli(
 
       case 'twin': {
         const routes = values.routes ? loadTwinRoutesFromFile(values.routes) : [];
-        const port = values.port ? Number.parseInt(values.port, 10) : 0;
-        const twin = createTwinServer({ routes });
-        twin.listen(port).then((started) => {
-          if (values.json || values.format === 'json') {
-            out(JSON.stringify({ ok: true, url: started.url, port: started.port }));
-          } else {
-            out(`Digital Twin server listening at ${started.url}`);
+        let port = 0;
+        if (values.port !== undefined) {
+          const rawPort = String(values.port).trim();
+          if (!/^\d+$/.test(rawPort)) {
+            err(`Error: Invalid --port "${values.port}". Expected an integer between 0 and 65535.`);
+            return 1;
           }
-        });
+          port = Number.parseInt(rawPort, 10);
+          if (!Number.isInteger(port) || port < 0 || port > 65535) {
+            err(`Error: Invalid --port "${values.port}". Expected an integer between 0 and 65535.`);
+            return 1;
+          }
+        }
+        const twin = createTwinServer({ routes });
+        twin
+          .listen(port)
+          .then((started) => {
+            if (values.json || values.format === 'json') {
+              out(JSON.stringify({ ok: true, url: started.url, port: started.port }));
+            } else {
+              out(`Digital Twin server listening at ${started.url}`);
+            }
+          })
+          .catch((listenErr) => {
+            err(`Error: ${listenErr.message}`);
+            process.exitCode = 1;
+          });
         return 0;
       }
 

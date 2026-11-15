@@ -286,6 +286,10 @@ export function evaluateStop(payload, { env = process.env } = {}) {
       return { decision: "allow" };
     }
 
+    if (typeof payload.executionNum === "number" && payload.executionNum >= 3) {
+      return { decision: "allow" };
+    }
+
     if (
       payload.terminationReason !== undefined &&
       payload.terminationReason !== "NO_TOOL_CALL"
@@ -328,6 +332,35 @@ export function evaluateStop(payload, { env = process.env } = {}) {
   }
 }
 
+export function formatStopWireOutput(result, payload) {
+  const safeResult =
+    result && typeof result === "object" ? result : { decision: "allow" };
+  if (!payload || typeof payload !== "object") {
+    return safeResult;
+  }
+
+  if (payload.hook_event_name === "AfterAgent") {
+    if (safeResult.decision === "continue") {
+      return { decision: "block", reason: safeResult.reason };
+    }
+    return { decision: "allow" };
+  }
+
+  const isClaudeCode =
+    payload.hook_event_name === "Stop" ||
+    (payload.stop_hook_active !== undefined &&
+      payload.terminationReason === undefined);
+
+  if (isClaudeCode) {
+    if (safeResult.decision === "continue") {
+      return { decision: "block", reason: safeResult.reason };
+    }
+    return {};
+  }
+
+  return safeResult;
+}
+
 async function readStdin() {
   if (process.stdin.isTTY) {
     return "";
@@ -359,7 +392,8 @@ if (isMainModule()) {
       }
       const payload = JSON.parse(trimmed);
       const result = evaluateStop(payload);
-      process.stdout.write(`${JSON.stringify(result)}\n`);
+      const wireOutput = formatStopWireOutput(result, payload);
+      process.stdout.write(`${JSON.stringify(wireOutput)}\n`);
     })
     .catch(() => {
       process.stdout.write(`${JSON.stringify({ decision: "allow" })}\n`);

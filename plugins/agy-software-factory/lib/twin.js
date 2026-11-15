@@ -44,22 +44,36 @@ function matchRoutePath(routePattern, actualPathname) {
   return { matched: true, params };
 }
 
-function readRequestBody(req) {
+const DEFAULT_MAX_BODY_BYTES = 10 * 1024 * 1024;
+
+function readRequestBody(req, maxBodyBytes = DEFAULT_MAX_BODY_BYTES) {
   return new Promise((resolve, reject) => {
     const chunks = [];
+    let totalBytes = 0;
+    let tooLarge = false;
     req.on('data', (chunk) => {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      totalBytes += buf.length;
+      if (totalBytes > maxBodyBytes) {
+        tooLarge = true;
+        return;
+      }
+      chunks.push(buf);
     });
     req.on('end', () => {
+      if (tooLarge) {
+        resolve({ tooLarge: true, raw: '', json: null });
+        return;
+      }
       const raw = Buffer.concat(chunks).toString('utf8');
       if (!raw) {
-        resolve({ raw: '', json: null });
+        resolve({ tooLarge: false, raw: '', json: null });
         return;
       }
       try {
-        resolve({ raw, json: JSON.parse(raw) });
+        resolve({ tooLarge: false, raw, json: JSON.parse(raw) });
       } catch {
-        resolve({ raw, json: null });
+        resolve({ tooLarge: false, raw, json: null });
       }
     });
     req.on('error', reject);
@@ -72,8 +86,13 @@ function readRequestBody(req) {
  * @param {object} [options]
  * @param {Array<object>} [options.routes=[]]
  * @param {object} [options.initialState={}]
+ * @param {number} [options.maxBodyBytes=10485760]
  */
-export function createTwinServer({ routes = [], initialState = {} } = {}) {
+export function createTwinServer({
+  routes = [],
+  initialState = {},
+  maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
+} = {}) {
   const recordedRequests = [];
   let state = structuredClone(initialState);
 
@@ -109,7 +128,23 @@ export function createTwinServer({ routes = [], initialState = {} } = {}) {
       return;
     }
 
-    const { raw, json } = await readRequestBody(req);
+    let bodyData;
+    try {
+      bodyData = await readRequestBody(req, maxBodyBytes);
+    } catch (readErr) {
+      sendJson(res, 400, { error: readErr.message });
+      return;
+    }
+
+    if (bodyData.tooLarge) {
+      sendJson(res, 413, {
+        error: 'Payload Too Large',
+        maxBodyBytes,
+      });
+      return;
+    }
+
+    const { raw, json } = bodyData;
     const query = Object.fromEntries(parsedUrl.searchParams.entries());
     const reqRecord = {
       method,
@@ -133,14 +168,18 @@ export function createTwinServer({ routes = [], initialState = {} } = {}) {
       }
 
       if (typeof route.handler === 'function') {
-        const result = await route.handler(
-          { ...reqRecord, params },
-          state
-        );
-        const status = result?.status ?? route.status ?? 200;
-        const headers = { ...(route.headers || {}), ...(result?.headers || {}) };
-        const body = result?.body !== undefined ? result.body : (result ?? { ok: true });
-        sendJson(res, status, body, headers);
+        try {
+          const result = await route.handler(
+            { ...reqRecord, params },
+            state
+          );
+          const status = result?.status ?? route.status ?? 200;
+          const headers = { ...(route.headers || {}), ...(result?.headers || {}) };
+          const body = result?.body !== undefined ? result.body : (result ?? { ok: true });
+          sendJson(res, status, body, headers);
+        } catch (handlerErr) {
+          sendJson(res, 500, { error: handlerErr.message || 'Twin route handler failed' });
+        }
         return;
       }
 
@@ -169,10 +208,19 @@ export function createTwinServer({ routes = [], initialState = {} } = {}) {
       recordedRequests.length = 0;
       state = structuredClone(initialState);
     },
-    listen: (port = 0, host = '127.0.0.1') =>
-      new Promise((resolve, reject) => {
-        server.once('error', reject);
+    listen: (port = 0, host = '127.0.0.1') => {
+      if (!Number.isInteger(port) || port < 0 || port > 65535) {
+        return Promise.reject(
+          new RangeError(
+            `Invalid port "${port}". Expected an integer between 0 and 65535.`
+          )
+        );
+      }
+      return new Promise((resolve, reject) => {
+        const onError = (err) => reject(err);
+        server.once('error', onError);
         server.listen(port, host, () => {
+          server.removeListener('error', onError);
           const addr = server.address();
           const actualPort = typeof addr === 'object' && addr ? addr.port : port;
           const url = `http://${host}:${actualPort}`;
@@ -191,7 +239,8 @@ export function createTwinServer({ routes = [], initialState = {} } = {}) {
               ),
           });
         });
-      }),
+      });
+    },
   };
 }
 
