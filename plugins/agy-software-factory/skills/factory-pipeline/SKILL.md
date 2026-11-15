@@ -1,9 +1,10 @@
 ---
 name: factory-pipeline
 description: >-
-  Orchestrates the 4-stage Antigravity Software Factory workflow end-to-end:
-  spec & slice planning, isolated parallel swarm execution, deterministic QA +
-  live browser verification, and diff security review. Use this skill when
+  Orchestrates the 4-stage Software Factory workflow end-to-end across
+  Antigravity, Claude Code, Gemini CLI, and Codex: spec & slice planning,
+  isolated parallel swarm or git worktree execution, deterministic QA + live
+  browser/E2E verification, and diff security review. Use this skill when
   building features, full-stack apps, services, or multi-file refactors from
   start to finish.
 ---

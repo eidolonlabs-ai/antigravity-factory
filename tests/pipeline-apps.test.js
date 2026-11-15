@@ -870,6 +870,11 @@ test('E2E Pipeline App 8: Non-destructive init merging, git worktrees, CLAUDE.md
     assert.ok(codexAgentsMd.includes('multi-agent Software Factory'));
     assert.ok(codexAgentsMd.includes('factory-security-reviewer/SKILL.md'));
 
+    // Native skill directories installed for Claude Code (.claude/skills), Gemini CLI (.gemini/skills), and Codex (.agents/skills)
+    assert.ok(fs.existsSync(path.join(secondInit.claudeSkillsDir, 'factory-pipeline', 'SKILL.md')));
+    assert.ok(fs.existsSync(path.join(secondInit.geminiSkillsDir, 'factory-qa-verifier', 'SKILL.md')));
+    assert.ok(fs.existsSync(path.join(secondInit.codexSkillsDir, 'factory-spec-planner', 'SKILL.md')));
+
     // Custom pre-commit hook preserved alongside factory gate lines
     const preCommitText = fs.readFileSync(secondInit.gitPreCommitPath, 'utf8');
     assert.ok(preCommitText.includes('echo "existing-check"'));

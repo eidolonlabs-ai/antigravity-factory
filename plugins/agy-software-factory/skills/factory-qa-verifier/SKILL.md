@@ -3,8 +3,9 @@ name: factory-qa-verifier
 description: >-
   Runs deterministic verification via `agy-factory verify`, audits `PASS`,
   `FAIL`, and `NOT_RUN` check states and `.factory/verify-receipt.json`, and
-  delegates live E2E web checks to the `browser` subagent. Use this skill to
-  verify builds, tests, workspace hygiene, and UI flows before completion.
+  runs live E2E web checks via the `browser` subagent or automated E2E runners.
+  Use this skill to verify builds, tests, workspace hygiene, and UI flows before
+  completion.
 ---
 
 # Factory QA Verifier

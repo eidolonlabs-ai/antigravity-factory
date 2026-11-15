@@ -161,7 +161,48 @@ function buildAgentInstructionsMarkdown(title, resolvedTarget, hookDirRef) {
   ].join('\n');
 }
 
-function writeClaudeConfig(resolvedTarget, hookDirRef) {
+function installAgentSkills(skillsDestRoot, sourceSkillsDir, mode) {
+  if (!fs.existsSync(sourceSkillsDir)) {
+    return null;
+  }
+  fs.mkdirSync(skillsDestRoot, { recursive: true });
+  const entries = fs.readdirSync(sourceSkillsDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const srcSkill = path.join(sourceSkillsDir, entry.name);
+    if (!fs.existsSync(path.join(srcSkill, 'SKILL.md'))) continue;
+    const destSkill = path.join(skillsDestRoot, entry.name);
+
+    if (mode === 'link') {
+      try {
+        const existingStat = fs.lstatSync(destSkill);
+        if (existingStat.isSymbolicLink() || existingStat.isDirectory()) {
+          if (fs.existsSync(destSkill) && fs.realpathSync(destSkill) === fs.realpathSync(srcSkill)) {
+            continue;
+          }
+          fs.rmSync(destSkill, { recursive: true, force: true });
+        }
+      } catch {
+        // Destination does not exist yet
+      }
+      try {
+        fs.symlinkSync(srcSkill, destSkill, 'dir');
+        continue;
+      } catch {
+        // Fallback to copy if symlinks are restricted
+      }
+    }
+
+    const srcReal = fs.realpathSync(srcSkill);
+    const destReal = fs.existsSync(destSkill) ? fs.realpathSync(destSkill) : null;
+    if (srcReal !== destReal) {
+      fs.cpSync(srcSkill, destSkill, { recursive: true, force: true });
+    }
+  }
+  return skillsDestRoot;
+}
+
+function writeClaudeConfig(resolvedTarget, hookDirRef, pluginDir, mode) {
   const claudeDir = path.join(resolvedTarget, '.claude');
   const settingsPath = path.join(claudeDir, 'settings.json');
   const guardCmd = `node "${path.join(hookDirRef, 'bin', 'pre-tool-guard.js')}"`;
@@ -172,6 +213,12 @@ function writeClaudeConfig(resolvedTarget, hookDirRef) {
     ['Stop', { matcher: '*', command: stopCmd }],
   ]);
 
+  const claudeSkillsDir = installAgentSkills(
+    path.join(claudeDir, 'skills'),
+    path.join(pluginDir, 'skills'),
+    mode
+  );
+
   const claudeMdPath = path.join(resolvedTarget, 'CLAUDE.md');
   if (!fs.existsSync(claudeMdPath)) {
     const claudeMd = buildAgentInstructionsMarkdown(
@@ -181,10 +228,10 @@ function writeClaudeConfig(resolvedTarget, hookDirRef) {
     );
     fs.writeFileSync(claudeMdPath, claudeMd, 'utf8');
   }
-  return { claudeSettingsPath: settingsPath, claudeMdPath };
+  return { claudeSettingsPath: settingsPath, claudeMdPath, claudeSkillsDir };
 }
 
-function writeGeminiConfig(resolvedTarget, hookDirRef) {
+function writeGeminiConfig(resolvedTarget, hookDirRef, pluginDir, mode) {
   const geminiDir = path.join(resolvedTarget, '.gemini');
   const settingsPath = path.join(geminiDir, 'settings.json');
   const guardCmd = `node "${path.join(hookDirRef, 'bin', 'pre-tool-guard.js')}"`;
@@ -195,6 +242,12 @@ function writeGeminiConfig(resolvedTarget, hookDirRef) {
     ['AfterAgent', { matcher: '.*', command: stopCmd }],
   ]);
 
+  const geminiSkillsDir = installAgentSkills(
+    path.join(geminiDir, 'skills'),
+    path.join(pluginDir, 'skills'),
+    mode
+  );
+
   const geminiMdPath = path.join(resolvedTarget, 'GEMINI.md');
   if (!fs.existsSync(geminiMdPath)) {
     const geminiMd = buildAgentInstructionsMarkdown(
@@ -204,7 +257,7 @@ function writeGeminiConfig(resolvedTarget, hookDirRef) {
     );
     fs.writeFileSync(geminiMdPath, geminiMd, 'utf8');
   }
-  return { geminiSettingsPath: settingsPath, geminiMdPath };
+  return { geminiSettingsPath: settingsPath, geminiMdPath, geminiSkillsDir };
 }
 
 function ensureCodexAgentsMd(resolvedTarget, pluginDir, hookDirRef) {
@@ -355,18 +408,32 @@ export function runInit({
   const effectivePluginRef =
     mode === 'copy' ? '.agents/plugins/agy-software-factory' : pluginDir;
 
+  const sourceSkillsBase =
+    mode === 'copy' ? destPluginDir : pluginDir;
+
   const targetConfigs = {};
   if (targets.has('claude')) {
-    Object.assign(targetConfigs, writeClaudeConfig(resolvedTarget, effectivePluginRef));
+    Object.assign(
+      targetConfigs,
+      writeClaudeConfig(resolvedTarget, effectivePluginRef, sourceSkillsBase, mode)
+    );
   }
   if (targets.has('gemini')) {
-    Object.assign(targetConfigs, writeGeminiConfig(resolvedTarget, effectivePluginRef));
+    Object.assign(
+      targetConfigs,
+      writeGeminiConfig(resolvedTarget, effectivePluginRef, sourceSkillsBase, mode)
+    );
   }
   if (targets.has('codex')) {
     targetConfigs.agentsMdPath = ensureCodexAgentsMd(
       resolvedTarget,
-      pluginDir,
+      sourceSkillsBase,
       effectivePluginRef
+    );
+    targetConfigs.codexSkillsDir = installAgentSkills(
+      path.join(resolvedTarget, '.agents', 'skills'),
+      path.join(sourceSkillsBase, 'skills'),
+      mode
     );
     targetConfigs.gitPreCommitPath = writeGitPreCommitHook(resolvedTarget, effectivePluginRef);
   }

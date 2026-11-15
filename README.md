@@ -3,9 +3,9 @@
 [![Software Factory CI](https://github.com/theRealMarkCastillo/agy-software-factory/actions/workflows/ci.yml/badge.svg)](https://github.com/theRealMarkCastillo/agy-software-factory/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Antigravity Software Factory** is a zero-dependency, portable **Antigravity plugin + deterministic Node.js CLI** that turns multi-agent software development into a repeatable, auditable pipeline.
+**Antigravity Software Factory** is a zero-dependency, portable **Antigravity plugin + deterministic Node.js CLI** supporting **Antigravity**, **Claude Code**, **Gemini CLI**, and **OpenAI Codex** that turns multi-agent software development into a repeatable, auditable pipeline.
 
-It pairs **probabilistic agent skills** (specification planning, isolated parallel swarm authoring, browser E2E testing, and semantic code review) with **deterministic runtime gates** (stack detection, test/build verification with cryptographic workspace receipts, `file:line` diff security scanning, and `PreToolUse` / `Stop` lifecycle hooks).
+It pairs **probabilistic agent skills** (specification planning, isolated parallel swarm/worktree authoring, browser/E2E testing, and semantic code review) with **deterministic runtime gates** (stack detection, test/build verification with cryptographic workspace receipts, `file:line` diff security scanning, and `PreToolUse` / `Stop` lifecycle hooks).
 
 ---
 
@@ -360,9 +360,9 @@ node bin/agy-factory.js init /path/to/your-repo --mode copy --target all
 ```
 
 - **Antigravity (`--target agy`)**: Writes `.agents/plugins.json` and `.factory.json`.
-- **Claude Code (`--target claude`)**: Non-destructively merges `PreToolUse` & `Stop` hooks into `.claude/settings.json` and scaffolds `CLAUDE.md` (importing workspace rules and referencing the 4 stage skills).
-- **Gemini CLI (`--target gemini`)**: Non-destructively merges `BeforeTool` & `AfterAgent` hooks into `.gemini/settings.json` and scaffolds `GEMINI.md` (importing workspace rules and referencing the 4 stage skills).
-- **Codex / Git (`--target codex`)**: Installs `.git/hooks/pre-commit` (`chmod 0755`, supporting standard repos, `git worktree`, and submodules) running `agy-factory audit-diff` and `agy-factory verify`, and scaffolds root `AGENTS.md` if missing.
+- **Claude Code (`--target claude`)**: Non-destructively merges `PreToolUse` & `Stop` hooks into `.claude/settings.json`, installs native skills into `.claude/skills/`, and scaffolds `CLAUDE.md`.
+- **Gemini CLI (`--target gemini`)**: Non-destructively merges `BeforeTool` & `AfterAgent` hooks into `.gemini/settings.json`, installs native skills into `.gemini/skills/`, and scaffolds `GEMINI.md`.
+- **Codex / Git (`--target codex`)**: Installs `.git/hooks/pre-commit` (`chmod 0755`, supporting standard repos, `git worktree`, and submodules), installs native skills into `.agents/skills/`, and scaffolds root `AGENTS.md` if missing.
 
 ---
 

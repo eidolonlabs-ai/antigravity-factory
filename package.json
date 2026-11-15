@@ -1,7 +1,7 @@
 {
   "name": "agy-software-factory",
   "version": "1.0.0",
-  "description": "Antigravity-native Software Factory CLI, lifecycle guardrails, and multi-agent skills",
+  "description": "Portable multi-agent Software Factory plugin, deterministic verification CLI, lifecycle guardrails, and stage skills for Antigravity, Claude Code, Gemini CLI, and Codex",
   "license": "MIT",
   "author": "Mark Castillo",
   "homepage": "https://github.com/theRealMarkCastillo/agy-software-factory",

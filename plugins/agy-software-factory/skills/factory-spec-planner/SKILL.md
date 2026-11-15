@@ -3,8 +3,8 @@ name: factory-spec-planner
 description: >-
   Inventories a repository with `agy-factory detect`, defines measurable
   acceptance criteria and shared data/API contracts, and produces a conflict-free
-  Slice Ownership table. Use this skill before multi-file edits or parallel
-  swarm builds.
+  Slice Ownership table (`.factory/spec.json`). Use this skill before multi-file
+  edits or parallel swarm/worktree builds.
 ---
 
 # Factory Spec & Ownership Planner
