@@ -7,8 +7,11 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { evaluatePreToolUse } from '../plugins/agy-software-factory/bin/pre-tool-guard.js';
-import { evaluateStop } from '../plugins/agy-software-factory/bin/stop-verify-gate.js';
-import { runVerify } from '../plugins/agy-software-factory/lib/verify.js';
+import {
+  evaluateStop,
+  inspectGitStateFallback,
+} from '../plugins/agy-software-factory/bin/stop-verify-gate.js';
+import { runVerify, computeWorkspaceDigest } from '../plugins/agy-software-factory/lib/verify.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -631,4 +634,143 @@ test('Defense-in-depth: Stop executionNum ceiling and PreToolUse shell FACTORY_S
     { env: sliceEnv }
   );
   assert.equal(allowedInSlice.decision, 'allow');
+});
+
+test('Stop gate fallback stateHash matches computeWorkspaceDigest across edits, deletions, and untracked files', (t) => {
+  const tempRepo = createDirtyGitRepo(t);
+
+  // Add another tracked file, commit, then delete it and add an untracked file
+  const trackedExtra = path.join(tempRepo, 'extra.js');
+  fs.writeFileSync(trackedExtra, 'export const extra = 1;\n', 'utf8');
+  execFileSync('git', ['add', 'extra.js'], { cwd: tempRepo, stdio: 'ignore' });
+  execFileSync('git', ['commit', '-m', 'add extra'], { cwd: tempRepo, stdio: 'ignore' });
+  fs.unlinkSync(trackedExtra);
+  fs.writeFileSync(path.join(tempRepo, 'untracked.js'), 'export const u = 42;\n', 'utf8');
+
+  const fallback = inspectGitStateFallback(tempRepo);
+  const canonicalDigest = computeWorkspaceDigest(tempRepo);
+  assert.ok(fallback);
+  assert.equal(fallback.hasChanges, true);
+  assert.equal(fallback.stateHash, canonicalDigest);
+});
+
+test('PreToolUse guard unwraps sh/bash -c, unquoted $(...), sed -i, dd of=, ln, and cp -t', (t) => {
+  const tempRepo = createDirtyGitRepo(t);
+
+  fs.mkdirSync(path.join(tempRepo, '.factory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tempRepo, '.factory', 'spec.json'),
+    JSON.stringify({
+      version: 1,
+      slices: {
+        api: { allowPaths: ['api/**'] },
+        web: { allowPaths: ['web/**'] },
+      },
+    }),
+    'utf8'
+  );
+
+  assert.equal(
+    evaluatePreToolUse({
+      toolCall: { name: 'run_command', args: { CommandLine: 'bash -lc "rm -rf /"' } },
+    }).decision,
+    'deny'
+  );
+  assert.equal(
+    evaluatePreToolUse({
+      toolCall: { name: 'run_command', args: { CommandLine: 'sh -c "echo pwn > .env"' } },
+    }).decision,
+    'deny'
+  );
+  assert.equal(
+    evaluatePreToolUse({
+      toolCall: { name: 'run_command', args: { CommandLine: 'echo $(rm -rf /)' } },
+    }).decision,
+    'deny'
+  );
+  assert.equal(
+    evaluatePreToolUse({
+      toolCall: {
+        name: 'run_command',
+        args: { CommandLine: "sed -i 's/false/true/' .factory/verify-receipt.json" },
+      },
+    }).decision,
+    'deny'
+  );
+  assert.equal(
+    evaluatePreToolUse({
+      toolCall: {
+        name: 'run_command',
+        args: { CommandLine: 'dd if=/dev/zero of=holdout/test.js bs=1 count=1' },
+      },
+    }).decision,
+    'deny'
+  );
+  assert.equal(
+    evaluatePreToolUse({
+      toolCall: {
+        name: 'run_command',
+        args: { CommandLine: 'ln -sf /tmp/x .env' },
+      },
+    }).decision,
+    'deny'
+  );
+  assert.equal(
+    evaluatePreToolUse({
+      toolCall: {
+        name: 'run_command',
+        args: { CommandLine: 'cp -t holdout foo.js' },
+      },
+    }).decision,
+    'deny'
+  );
+
+  // Reading receipt to /tmp via cp -t /tmp is allowed; node -e is allowed
+  assert.equal(
+    evaluatePreToolUse({
+      toolCall: {
+        name: 'run_command',
+        args: { CommandLine: 'cp -t /tmp .factory/verify-receipt.json' },
+      },
+    }).decision,
+    'allow'
+  );
+  assert.equal(
+    evaluatePreToolUse({
+      toolCall: {
+        name: 'run_command',
+        args: { CommandLine: 'node -e "process.exit(0)"' },
+      },
+    }).decision,
+    'allow'
+  );
+
+  // Slice enforcement for sed -i: in-slice allowed, out-of-slice blocked
+  const sliceEnv = { ...process.env, FACTORY_SLICE: 'api' };
+  assert.equal(
+    evaluatePreToolUse(
+      {
+        workspacePaths: [tempRepo],
+        toolCall: {
+          name: 'run_command',
+          args: { CommandLine: "sed -i 's/a/b/' api/server.js" },
+        },
+      },
+      { env: sliceEnv }
+    ).decision,
+    'allow'
+  );
+  assert.equal(
+    evaluatePreToolUse(
+      {
+        workspacePaths: [tempRepo],
+        toolCall: {
+          name: 'run_command',
+          args: { CommandLine: "sed -i 's/a/b/' web/app.js" },
+        },
+      },
+      { env: sliceEnv }
+    ).decision,
+    'deny'
+  );
 });

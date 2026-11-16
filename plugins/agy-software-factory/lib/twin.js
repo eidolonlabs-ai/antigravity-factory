@@ -45,6 +45,7 @@ function matchRoutePath(routePattern, actualPathname) {
 }
 
 const DEFAULT_MAX_BODY_BYTES = 10 * 1024 * 1024;
+const DEFAULT_MAX_RECORDED_REQUESTS = 1000;
 
 function readRequestBody(req, maxBodyBytes = DEFAULT_MAX_BODY_BYTES) {
   return new Promise((resolve, reject) => {
@@ -87,11 +88,13 @@ function readRequestBody(req, maxBodyBytes = DEFAULT_MAX_BODY_BYTES) {
  * @param {Array<object>} [options.routes=[]]
  * @param {object} [options.initialState={}]
  * @param {number} [options.maxBodyBytes=10485760]
+ * @param {number} [options.maxRecordedRequests=1000]
  */
 export function createTwinServer({
   routes = [],
   initialState = {},
   maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
+  maxRecordedRequests = DEFAULT_MAX_RECORDED_REQUESTS,
 } = {}) {
   const recordedRequests = [];
   let state = structuredClone(initialState);
@@ -156,6 +159,13 @@ export function createTwinServer({
       timestamp: new Date().toISOString(),
     };
     recordedRequests.push(reqRecord);
+    if (
+      Number.isInteger(maxRecordedRequests) &&
+      maxRecordedRequests > 0 &&
+      recordedRequests.length > maxRecordedRequests
+    ) {
+      recordedRequests.splice(0, recordedRequests.length - maxRecordedRequests);
+    }
 
     for (const route of routes) {
       const routeMethod = (route.method || 'GET').toUpperCase();

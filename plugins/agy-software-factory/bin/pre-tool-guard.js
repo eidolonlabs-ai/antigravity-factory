@@ -119,6 +119,23 @@ function splitShellSegments(commandLine) {
       continue;
     }
 
+    if (ch === "$" && commandLine[i + 1] === "(" && prev !== "\\") {
+      let sub = "";
+      let depth = 1;
+      i += 2;
+      while (i < commandLine.length && depth > 0) {
+        if (commandLine[i] === "(" && commandLine[i - 1] !== "\\") depth += 1;
+        else if (commandLine[i] === ")" && commandLine[i - 1] !== "\\") depth -= 1;
+        if (depth > 0) sub += commandLine[i];
+        i += 1;
+      }
+      i -= 1;
+      if (sub.trim()) {
+        segments.push(...splitShellSegments(sub));
+      }
+      continue;
+    }
+
     if (
       (ch === ";" || ch === "\n" || ch === "(" || ch === ")" || ch === "`") &&
       prev !== "\\"
@@ -269,7 +286,99 @@ function inspectFileTarget(rawPath) {
   return { decision: "allow" };
 }
 
-function inspectCommandLine(commandLine, { workspaceRoot, activeSlice } = {}) {
+const SHELL_WRAPPER_CMDS = new Set(["sh", "bash", "zsh", "dash", "ksh"]);
+
+function evaluateTargetPaths(paths, { workspaceRoot, activeSlice } = {}) {
+  for (const targetPath of paths) {
+    if (!targetPath) continue;
+    const targetCheck = inspectFileTarget(targetPath);
+    if (targetCheck.decision === "deny") {
+      return targetCheck;
+    }
+    if (activeSlice) {
+      const sliceCheck = inspectSliceOwnership(targetPath, workspaceRoot, activeSlice);
+      if (sliceCheck.decision === "deny") {
+        return sliceCheck;
+      }
+    }
+  }
+  return null;
+}
+
+function extractTargetDirDestinations(args) {
+  const targets = [];
+  let hasTargetDirFlag = false;
+  const positional = [];
+
+  for (let i = 0; i < args.length; i += 1) {
+    const tok = args[i];
+    if (tok === "-t" || tok === "--target-directory") {
+      hasTargetDirFlag = true;
+      if (args[i + 1]) {
+        targets.push(args[i + 1]);
+        i += 1;
+      }
+    } else if (tok.startsWith("--target-directory=")) {
+      hasTargetDirFlag = true;
+      const val = tok.slice("--target-directory=".length);
+      if (val) targets.push(val);
+    } else if (!tok.startsWith("-")) {
+      positional.push(tok);
+    }
+  }
+
+  if (hasTargetDirFlag) {
+    return targets;
+  }
+  return positional.length > 1 ? [positional[positional.length - 1]] : positional;
+}
+
+function extractInPlaceEditTargets(cmd, args) {
+  let hasInPlace = false;
+  let sawExplicitExprOrScript = false;
+  const positional = [];
+
+  for (let i = 0; i < args.length; i += 1) {
+    const tok = args[i];
+    if (tok === "--") {
+      positional.push(...args.slice(i + 1).filter(Boolean));
+      break;
+    }
+    if (tok === "--in-place" || tok.startsWith("--in-place=")) {
+      hasInPlace = true;
+      continue;
+    }
+    if (tok.startsWith("-") && !tok.startsWith("--") && tok.length > 1) {
+      if (tok.includes("i")) {
+        hasInPlace = true;
+      }
+      if (
+        (cmd === "sed" && (tok === "-e" || tok === "-f" || /[ef]$/.test(tok))) ||
+        (cmd === "perl" && (tok === "-e" || tok === "-E" || /[eE]$/.test(tok)))
+      ) {
+        sawExplicitExprOrScript = true;
+        i += 1;
+      }
+      continue;
+    }
+    if (tok.startsWith("--expression=") || tok.startsWith("--file=")) {
+      sawExplicitExprOrScript = true;
+      continue;
+    }
+    if (!tok) continue;
+    positional.push(tok);
+  }
+
+  if (!hasInPlace) {
+    return [];
+  }
+  if (!sawExplicitExprOrScript && positional.length > 1) {
+    return positional.slice(1);
+  }
+  return positional;
+}
+
+function inspectCommandLine(commandLine, { workspaceRoot, activeSlice, depth = 0 } = {}) {
   if (!commandLine || typeof commandLine !== "string") {
     return { decision: "allow" };
   }
@@ -298,6 +407,33 @@ function inspectCommandLine(commandLine, { workspaceRoot, activeSlice } = {}) {
     const cmd = path.posix.basename(tokens[0]);
     const rest = tokens.slice(1);
 
+    // Unwrap shell wrapper commands (e.g., sh -c "...", bash -lc "...")
+    if (SHELL_WRAPPER_CMDS.has(cmd) && depth < 5) {
+      for (let i = 0; i < rest.length; i += 1) {
+        const tok = rest[i];
+        if (
+          tok === "-c" ||
+          (tok.startsWith("-") && !tok.startsWith("--") && tok.endsWith("c"))
+        ) {
+          const nestedCmd = rest[i + 1];
+          if (typeof nestedCmd === "string" && nestedCmd.trim()) {
+            const nested = inspectCommandLine(nestedCmd, {
+              workspaceRoot,
+              activeSlice,
+              depth: depth + 1,
+            });
+            if (nested.decision === "deny") {
+              return nested;
+            }
+            if (nested.decision === "force_ask" && !forceAskReason) {
+              forceAskReason = nested.reason;
+            }
+          }
+          break;
+        }
+      }
+    }
+
     // Check output redirections (> or >>) targeting protected files (.factory/**, holdout/**, .env, keys, .git) or out-of-slice paths
     for (let i = 0; i < tokens.length; i += 1) {
       const tok = tokens[i];
@@ -308,16 +444,8 @@ function inspectCommandLine(commandLine, { workspaceRoot, activeSlice } = {}) {
         redirTarget = tok.replace(/^(?:1|&)?>>?/, "");
       }
       if (redirTarget && !redirTarget.startsWith("&")) {
-        const targetCheck = inspectFileTarget(redirTarget);
-        if (targetCheck.decision === "deny") {
-          return targetCheck;
-        }
-        if (activeSlice) {
-          const sliceCheck = inspectSliceOwnership(redirTarget, workspaceRoot, activeSlice);
-          if (sliceCheck.decision === "deny") {
-            return sliceCheck;
-          }
-        }
+        const denied = evaluateTargetPaths([redirTarget], { workspaceRoot, activeSlice });
+        if (denied) return denied;
       }
     }
 
@@ -326,27 +454,37 @@ function inspectCommandLine(commandLine, { workspaceRoot, activeSlice } = {}) {
       cmd === "rm" ||
       cmd === "cp" ||
       cmd === "mv" ||
+      cmd === "ln" ||
       cmd === "tee" ||
       cmd === "touch" ||
       cmd === "truncate"
     ) {
-      const nonFlagArgs = rest.filter((tok) => !tok.startsWith("-"));
-      const argsToInspect =
-        cmd === "cp" && nonFlagArgs.length > 1
-          ? [nonFlagArgs[nonFlagArgs.length - 1]]
-          : nonFlagArgs;
-      for (const tok of argsToInspect) {
-        const targetCheck = inspectFileTarget(tok);
-        if (targetCheck.decision === "deny") {
-          return targetCheck;
-        }
-        if (activeSlice) {
-          const sliceCheck = inspectSliceOwnership(tok, workspaceRoot, activeSlice);
-          if (sliceCheck.decision === "deny") {
-            return sliceCheck;
-          }
-        }
+      let argsToInspect;
+      if (cmd === "cp" || cmd === "ln") {
+        argsToInspect = extractTargetDirDestinations(rest);
+      } else if (cmd === "mv") {
+        const nonFlag = rest.filter((tok) => !tok.startsWith("-"));
+        argsToInspect = [...new Set([...nonFlag, ...extractTargetDirDestinations(rest)])];
+      } else {
+        argsToInspect = rest.filter((tok) => !tok.startsWith("-"));
       }
+      const denied = evaluateTargetPaths(argsToInspect, { workspaceRoot, activeSlice });
+      if (denied) return denied;
+    }
+
+    if (cmd === "sed" || cmd === "perl") {
+      const inPlaceTargets = extractInPlaceEditTargets(cmd, rest);
+      const denied = evaluateTargetPaths(inPlaceTargets, { workspaceRoot, activeSlice });
+      if (denied) return denied;
+    }
+
+    if (cmd === "dd") {
+      const ddTargets = rest
+        .filter((tok) => tok.startsWith("of="))
+        .map((tok) => tok.slice(3))
+        .filter(Boolean);
+      const denied = evaluateTargetPaths(ddTargets, { workspaceRoot, activeSlice });
+      if (denied) return denied;
     }
 
     if (cmd === "rm") {
@@ -444,8 +582,13 @@ function globToRegExp(globPattern) {
     const ch = globPattern[i];
     if (ch === "*") {
       if (globPattern[i + 1] === "*") {
-        regexStr += ".*";
-        i += 1;
+        if (globPattern[i + 2] === "/") {
+          regexStr += "(?:.+/)?";
+          i += 2;
+        } else {
+          regexStr += ".*";
+          i += 1;
+        }
       } else {
         regexStr += "[^/]*";
       }

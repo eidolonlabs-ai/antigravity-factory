@@ -34,28 +34,20 @@ function isEnforcementEnabled(cwd, env) {
   return config?.enforceStopVerify === true;
 }
 
-function extractPorcelainPath(line) {
-  const raw = line.slice(3);
-  const target = raw.includes(" -> ") ? raw.split(" -> ").pop() : raw;
-  const unquoted =
-    target.startsWith('"') && target.endsWith('"')
-      ? target.slice(1, -1)
-      : target;
-  return unquoted.replace(/\\/g, "/");
-}
-
 function isFactoryInternalPath(relPath) {
+  const norm = relPath.replace(/\\/g, "/");
   return (
-    relPath === ".factory" ||
-    relPath.startsWith(".factory/") ||
-    relPath.includes("/.factory/")
+    norm === ".factory" ||
+    norm.startsWith(".factory/") ||
+    norm.includes("/.factory/") ||
+    norm.endsWith("/.factory")
   );
 }
 
 function hashUntrackedFile(absPath) {
   try {
     const stat = fs.lstatSync(absPath);
-    if (!stat.isFile()) return null;
+    if (stat.isSymbolicLink() || !stat.isFile()) return null;
     const buf = fs.readFileSync(absPath);
     return crypto.createHash("sha256").update(buf).digest("hex");
   } catch {
@@ -63,14 +55,17 @@ function hashUntrackedFile(absPath) {
   }
 }
 
-function inspectGitStateFallback(cwd) {
+export function inspectGitStateFallback(cwd) {
+  const realCwd = fs.existsSync(cwd) ? fs.realpathSync(cwd) : cwd;
   let gitRoot = "";
   try {
-    gitRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-      cwd,
+    const rawRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: realCwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
+    if (!rawRoot || !fs.existsSync(rawRoot)) return null;
+    gitRoot = fs.realpathSync(rawRoot);
   } catch {
     return null;
   }
@@ -79,9 +74,9 @@ function inspectGitStateFallback(cwd) {
   try {
     rawPorcelain = execFileSync(
       "git",
-      ["status", "--porcelain", "-uall", "--", "."],
+      ["status", "--porcelain", "-z", "-uall", "--", "."],
       {
-        cwd,
+        cwd: realCwd,
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
       }
@@ -90,52 +85,95 @@ function inspectGitStateFallback(cwd) {
     return null;
   }
 
-  const dirtyLines = [];
+  const porcelainEntries = [];
   const dirtyPaths = [];
   const untrackedEntries = [];
 
-  for (const line of rawPorcelain.split(/\r?\n/)) {
-    if (!line) continue;
-    const relPath = extractPorcelainPath(line);
-    if (isFactoryInternalPath(relPath)) continue;
-    dirtyLines.push(line);
-    dirtyPaths.push(relPath);
+  if (rawPorcelain) {
+    const tokens = rawPorcelain.split("\0");
+    for (let i = 0; i < tokens.length; i += 1) {
+      const entry = tokens[i];
+      if (!entry || entry.length < 4) continue;
+      const xy = entry.slice(0, 2);
+      const fileRelToRepo = entry.slice(3);
+      let origRelToRepo = null;
+      if (xy[0] === "R" || xy[0] === "C") {
+        origRelToRepo = tokens[i + 1] || "";
+        i += 1;
+      }
 
-    if (line.startsWith("?? ")) {
-      const absUntracked = path.resolve(gitRoot, relPath);
-      const contentHash = hashUntrackedFile(absUntracked);
-      if (contentHash) {
-        untrackedEntries.push(`${relPath}:${contentHash}`);
+      const absPath = path.resolve(gitRoot, fileRelToRepo);
+      const relToCwd = path.relative(realCwd, absPath).split(path.sep).join("/");
+      if (isFactoryInternalPath(fileRelToRepo) || isFactoryInternalPath(relToCwd)) {
+        continue;
+      }
+
+      porcelainEntries.push(
+        origRelToRepo !== null
+          ? `${xy} ${origRelToRepo} -> ${fileRelToRepo}`
+          : `${xy} ${fileRelToRepo}`
+      );
+      dirtyPaths.push(fileRelToRepo);
+
+      if (xy === "??") {
+        const contentHash = hashUntrackedFile(absPath);
+        if (contentHash) {
+          untrackedEntries.push(`${fileRelToRepo}:${contentHash}`);
+        }
       }
     }
   }
 
+  porcelainEntries.sort();
   untrackedEntries.sort();
 
+  const excludeArgs = ["--", ".", ":(exclude).factory", ":(exclude)**/.factory/**"];
   let gitDiffHead = "";
   try {
     gitDiffHead = execFileSync(
       "git",
-      ["diff", "HEAD", "--", ".", ":(exclude).factory"],
+      ["diff", "HEAD", ...excludeArgs],
       {
-        cwd,
+        cwd: realCwd,
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
         maxBuffer: 10 * 1024 * 1024,
       }
     );
   } catch {
-    gitDiffHead = "";
+    const parts = [];
+    try {
+      const cached = execFileSync("git", ["diff", "--cached", ...excludeArgs], {
+        cwd: realCwd,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      if (cached) parts.push(cached);
+    } catch {
+      // Ignore cached diff failure
+    }
+    try {
+      const worktree = execFileSync("git", ["diff", ...excludeArgs], {
+        cwd: realCwd,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      if (worktree) parts.push(worktree);
+    } catch {
+      // Ignore worktree diff failure
+    }
+    gitDiffHead = parts.join("\n");
   }
 
-  const filteredPorcelain = dirtyLines.join("\n");
   const hasChanges =
-    filteredPorcelain.length > 0 || gitDiffHead.trim().length > 0;
+    porcelainEntries.length > 0 || gitDiffHead.length > 0;
 
   const stateHash = crypto
     .createHash("sha256")
     .update(
-      `${filteredPorcelain}\n${gitDiffHead}\n${untrackedEntries.join("\n")}`
+      `${porcelainEntries.join("\n")}\n---\n${gitDiffHead}\n---\n${untrackedEntries.join("\n")}`
     )
     .digest("hex");
 

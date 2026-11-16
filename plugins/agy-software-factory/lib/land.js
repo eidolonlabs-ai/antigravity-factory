@@ -15,6 +15,21 @@ function resolveHeadSha(repoDir) {
   return sha || null;
 }
 
+function resolveDiffBaseSha(coordinatorDir, worktreeDir) {
+  const targetHeadSha = resolveHeadSha(coordinatorDir);
+  if (!targetHeadSha) return null;
+  const res = spawnSync('git', ['merge-base', targetHeadSha, 'HEAD'], {
+    cwd: worktreeDir,
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  if (res.status === 0) {
+    const mergeBase = (res.stdout || '').trim();
+    if (mergeBase) return mergeBase;
+  }
+  return targetHeadSha;
+}
+
 function isFactoryPath(relPath) {
   return relPath === '.factory' || relPath.startsWith('.factory/');
 }
@@ -159,17 +174,17 @@ export function runLand({
     );
   }
 
-  const targetHeadSha = resolveHeadSha(resolvedCwd);
+  const diffBaseSha = resolveDiffBaseSha(resolvedCwd, resolvedWorktree);
 
   const audit = runAuditDiff({
     cwd: resolvedWorktree,
-    base: targetHeadSha,
+    base: diffBaseSha,
     allowPaths: effectiveAllowPaths,
   });
 
   const { modifiedOrAdded, deleted } = collectWorktreeChanges(
     resolvedWorktree,
-    targetHeadSha
+    diffBaseSha
   );
 
   for (const relDelete of deleted) {

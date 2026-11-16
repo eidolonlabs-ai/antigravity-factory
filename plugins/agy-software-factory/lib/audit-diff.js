@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { resolveSliceSpec } from './spec.js';
+import { resolveSliceSpec, normalizeAllowPathsList, matchesAllowedPath } from './spec.js';
+
+export { matchesAllowedPath };
 
 const SKIP_DIRS = new Set([
   'node_modules',
@@ -359,65 +361,6 @@ function scanFileLines(absPath, relPath) {
   return { scanned: true, findings };
 }
 
-function parseAllowPaths(allowPaths) {
-  if (!allowPaths) return [];
-  const rawList = Array.isArray(allowPaths)
-    ? allowPaths
-    : String(allowPaths).split(',');
-  return rawList
-    .map((p) => String(p).trim().replace(/\\/g, '/').replace(/^\.\//, ''))
-    .filter(Boolean);
-}
-
-function globToRegExp(globPattern) {
-  let regexStr = '^';
-  for (let i = 0; i < globPattern.length; i += 1) {
-    const ch = globPattern[i];
-    if (ch === '*') {
-      if (globPattern[i + 1] === '*') {
-        regexStr += '.*';
-        i += 1;
-      } else {
-        regexStr += '[^/]*';
-      }
-    } else if (ch === '?') {
-      regexStr += '[^/]';
-    } else if ('\\.[]{}()+-^$|'.includes(ch)) {
-      regexStr += `\\${ch}`;
-    } else {
-      regexStr += ch;
-    }
-  }
-  regexStr += '$';
-  return new RegExp(regexStr);
-}
-
-export function matchesAllowedPath(relPath, allowedPatterns) {
-  const normFile = relPath.replace(/\\/g, '/').replace(/^\.\//, '');
-  for (const rawPattern of allowedPatterns) {
-    if (rawPattern === '.' || rawPattern === '*' || rawPattern === '**') {
-      return true;
-    }
-    if (rawPattern.endsWith('/**') || rawPattern.endsWith('/*')) {
-      const prefix = rawPattern.replace(/\/\*+$/, '').replace(/\/+$/, '');
-      if (normFile === prefix || normFile.startsWith(`${prefix}/`)) {
-        return true;
-      }
-    }
-    if (rawPattern.includes('*') || rawPattern.includes('?')) {
-      if (globToRegExp(rawPattern).test(normFile)) {
-        return true;
-      }
-      continue;
-    }
-    const cleanPrefix = rawPattern.replace(/\/+$/, '');
-    if (normFile === cleanPrefix || normFile.startsWith(`${cleanPrefix}/`)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 /**
  * Scans git diff / untracked files (or full workspace when `allFiles: true` or non-git)
  * for hardcoded secrets, dangerous execution sinks, XSS sinks, SQL string interpolation,
@@ -450,7 +393,7 @@ export function runAuditDiff({
     effectiveAllowPaths = sliceSpec.allowPaths;
   }
 
-  const allowedPatterns = parseAllowPaths(effectiveAllowPaths);
+  const allowedPatterns = normalizeAllowPathsList(effectiveAllowPaths);
   const realCwd = fs.existsSync(resolvedCwd) ? fs.realpathSync(resolvedCwd) : resolvedCwd;
   const gitTopLevel = !allFiles ? getGitTopLevel(realCwd) : null;
 

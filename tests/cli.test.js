@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import { detectProject } from '../plugins/agy-software-factory/lib/detect.js';
 import { runVerify, computeWorkspaceDigest } from '../plugins/agy-software-factory/lib/verify.js';
-import { runAuditDiff } from '../plugins/agy-software-factory/lib/audit-diff.js';
+import { runAuditDiff, matchesAllowedPath } from '../plugins/agy-software-factory/lib/audit-diff.js';
 import { runInit } from '../plugins/agy-software-factory/lib/init.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -727,4 +727,72 @@ test('runAuditDiff enforces --allow-paths slice ownership boundaries', async (t)
   assert.ok(violation, 'expected slice-boundary-violation finding');
   assert.equal(violation.file, 'web/src/App.jsx');
   assert.equal(violation.severity, 'high');
+});
+
+test('runVerify hygiene honors git check-ignore (.git/info/exclude) and fails if .env is tracked', async (t) => {
+  const tempRepo = createTempDir(t);
+
+  execFileSync('git', ['init'], { cwd: tempRepo, stdio: 'ignore' });
+  execFileSync('git', ['config', 'user.email', 'factory@example.com'], {
+    cwd: tempRepo,
+    stdio: 'ignore',
+  });
+  execFileSync('git', ['config', 'user.name', 'Factory Test'], {
+    cwd: tempRepo,
+    stdio: 'ignore',
+  });
+  execFileSync('git', ['config', 'commit.gpgsign', 'false'], {
+    cwd: tempRepo,
+    stdio: 'ignore',
+  });
+
+  writeJson(path.join(tempRepo, 'package.json'), {
+    name: 'git-ignore-hygiene-test',
+    version: '1.0.0',
+    scripts: { test: 'node -e "process.exit(0)"' },
+  });
+  execFileSync('git', ['add', 'package.json'], { cwd: tempRepo, stdio: 'ignore' });
+  execFileSync('git', ['commit', '-m', 'init'], { cwd: tempRepo, stdio: 'ignore' });
+
+  // Ignore .env via .git/info/exclude rather than root .gitignore
+  fs.mkdirSync(path.join(tempRepo, '.git', 'info'), { recursive: true });
+  fs.writeFileSync(path.join(tempRepo, '.git', 'info', 'exclude'), '.env\n', 'utf8');
+  fs.writeFileSync(path.join(tempRepo, '.env'), 'PORT=4000\n', 'utf8');
+
+  const excludePassReceipt = await runVerify({ cwd: tempRepo, skipDocker: true });
+  const excludeHygiene = excludePassReceipt.checks.find((c) => c.category === 'hygiene');
+  assert.equal(excludeHygiene?.status, 'PASS');
+  assert.equal(excludePassReceipt.ok, true);
+
+  // If .env is force-tracked in git, hygiene must still FAIL
+  execFileSync('git', ['add', '-f', '.env'], { cwd: tempRepo, stdio: 'ignore' });
+  const trackedFailReceipt = await runVerify({ cwd: tempRepo, skipDocker: true });
+  const trackedHygiene = trackedFailReceipt.checks.find((c) => c.category === 'hygiene');
+  assert.equal(trackedHygiene?.status, 'FAIL');
+  assert.equal(trackedFailReceipt.ok, false);
+});
+
+test('matchesAllowedPath and runAuditDiff support zero-depth /**/ globs', async (t) => {
+  assert.equal(matchesAllowedPath('src/index.js', ['src/**/index.js']), true);
+  assert.equal(matchesAllowedPath('src/nested/deep/index.js', ['src/**/index.js']), true);
+  assert.equal(matchesAllowedPath('src/other.js', ['src/**/index.js']), false);
+  assert.equal(matchesAllowedPath('app.test.js', ['**/*.test.js']), true);
+  assert.equal(matchesAllowedPath('tests/unit/app.test.js', ['**/*.test.js']), true);
+
+  const tempRepo = createTempDir(t);
+  fs.mkdirSync(path.join(tempRepo, 'src', 'nested'), { recursive: true });
+  fs.writeFileSync(path.join(tempRepo, 'src', 'index.js'), 'export const root = 1;\n', 'utf8');
+  fs.writeFileSync(
+    path.join(tempRepo, 'src', 'nested', 'index.js'),
+    'export const nested = 2;\n',
+    'utf8'
+  );
+
+  const report = await runAuditDiff({
+    cwd: tempRepo,
+    allFiles: true,
+    allowPaths: 'src/**/index.js',
+  });
+  assert.equal(report.status, 'APPROVE_CANDIDATE');
+  assert.equal(report.findings.length, 0);
 });

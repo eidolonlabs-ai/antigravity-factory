@@ -221,15 +221,20 @@ function runHygieneCheck(resolvedCwd) {
   const start = Date.now();
   const issues = [];
 
+  const inGitWorkTree = isGitWorkTree(resolvedCwd);
+
   const envPath = path.join(resolvedCwd, '.env');
   const gitignorePath = path.join(resolvedCwd, '.gitignore');
   if (fs.existsSync(envPath) && fs.statSync(envPath).isFile()) {
-    if (!gitignoreCoversEnv(gitignorePath)) {
+    const isIgnoredByGit =
+      inGitWorkTree &&
+      runGit(['check-ignore', '-q', '--no-index', '.env'], resolvedCwd).status === 0;
+    if (!gitignoreCoversEnv(gitignorePath) && !isIgnoredByGit) {
       issues.push('.env exists in workspace without a .gitignore entry ignoring .env');
     }
   }
 
-  if (isGitWorkTree(resolvedCwd)) {
+  if (inGitWorkTree) {
     const lsRes = runGit(['ls-files'], resolvedCwd);
     if (lsRes.status === 0) {
       const tracked = lsRes.stdout

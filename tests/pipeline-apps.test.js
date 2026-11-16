@@ -684,6 +684,58 @@ test('E2E Pipeline App 5: Declarative Slice Manifest (.factory/spec.json), PreTo
         stdio: 'ignore',
       });
     }
+
+    // 4. Parallel worktrees branched from same base: landing wtApi and committing on main must not trigger false-positive slice violations when landing wtWeb
+    const sharedBaseSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: tempDir,
+      encoding: 'utf8',
+    }).trim();
+    const wtParApi = path.join(tempDir, '..', `wt-par-api-${Date.now()}`);
+    const wtParWeb = path.join(tempDir, '..', `wt-par-web-${Date.now()}`);
+    try {
+      execFileSync('git', ['worktree', 'add', '-b', 'par-api', wtParApi, sharedBaseSha], {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+      execFileSync('git', ['worktree', 'add', '-b', 'par-web', wtParWeb, sharedBaseSha], {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+
+      fs.writeFileSync(path.join(wtParApi, 'api', 'parallel-api.js'), 'export const pApi = 1;\n', 'utf8');
+      fs.writeFileSync(path.join(wtParWeb, 'web', 'parallel-web.js'), 'export const pWeb = 1;\n', 'utf8');
+
+      // Land api slice and advance main HEAD before landing web slice
+      const landParApi = runLand({ cwd: tempDir, worktree: wtParApi, slice: 'api' });
+      assert.equal(landParApi.ok, true);
+      execFileSync('git', ['add', '.'], { cwd: tempDir, stdio: 'ignore' });
+      execFileSync('git', ['commit', '-m', 'land parallel api before web'], {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+
+      // Landing wtParWeb against updated main must use merge-base and NOT flag api/parallel-api.js
+      const landParWeb = runLand({ cwd: tempDir, worktree: wtParWeb, slice: 'web' });
+      assert.equal(
+        landParWeb.ok,
+        true,
+        `Expected parallel web worktree to land cleanly after main moved ahead: ${JSON.stringify(landParWeb.audit)}`
+      );
+      assert.deepEqual(landParWeb.landedFiles, ['web/parallel-web.js']);
+      assert.equal(
+        fs.readFileSync(path.join(webDir, 'parallel-web.js'), 'utf8'),
+        'export const pWeb = 1;\n'
+      );
+    } finally {
+      execFileSync('git', ['worktree', 'remove', '--force', wtParApi], {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+      execFileSync('git', ['worktree', 'remove', '--force', wtParWeb], {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+    }
   });
 });
 
@@ -748,6 +800,27 @@ test('E2E Pipeline App 6: Digital Twin Universe (DTU) behavioral HTTP mock, stat
     assert.equal(started.getRequests().length, 0);
   } finally {
     await started.close();
+  }
+
+  // Verify maxRecordedRequests ring-buffer eviction
+  const cappedTwin = createTwinServer({
+    maxRecordedRequests: 3,
+    routes: [{ method: 'GET', path: '/ping/:id', response: { ok: true } }],
+  });
+  const cappedStarted = await cappedTwin.listen(0);
+  try {
+    for (const id of [1, 2, 3, 4, 5]) {
+      const res = await fetch(`${cappedStarted.url}/ping/${id}`);
+      assert.equal(res.status, 200);
+    }
+    const recorded = cappedStarted.getRequests();
+    assert.equal(recorded.length, 3);
+    assert.deepEqual(
+      recorded.map((r) => r.path),
+      ['/ping/3', '/ping/4', '/ping/5']
+    );
+  } finally {
+    await cappedStarted.close();
   }
 });
 

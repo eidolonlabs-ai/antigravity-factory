@@ -39,14 +39,19 @@ function normalizePrefixForOverlap(pattern) {
   return clean.replace(/\/\*+$/, '').replace(/\/+$/, '');
 }
 
-function globToRegExp(globPattern) {
+export function globToRegExp(globPattern) {
   let regexStr = '^';
   for (let i = 0; i < globPattern.length; i += 1) {
     const ch = globPattern[i];
     if (ch === '*') {
       if (globPattern[i + 1] === '*') {
-        regexStr += '.*';
-        i += 1;
+        if (globPattern[i + 2] === '/') {
+          regexStr += '(?:.+/)?';
+          i += 2;
+        } else {
+          regexStr += '.*';
+          i += 1;
+        }
       } else {
         regexStr += '[^/]*';
       }
@@ -60,6 +65,34 @@ function globToRegExp(globPattern) {
   }
   regexStr += '$';
   return new RegExp(regexStr);
+}
+
+export function matchesAllowedPath(relPath, allowedPatterns) {
+  const normFile = relPath.replace(/\\/g, '/').replace(/^\.\//, '');
+  for (const rawInput of allowedPatterns) {
+    const rawPattern = String(rawInput).trim().replace(/\\/g, '/').replace(/^\.\//, '');
+    if (!rawPattern) continue;
+    if (rawPattern === '.' || rawPattern === '*' || rawPattern === '**') {
+      return true;
+    }
+    if (rawPattern.endsWith('/**') || rawPattern.endsWith('/*')) {
+      const prefix = rawPattern.replace(/\/\*+$/, '').replace(/\/+$/, '');
+      if (normFile === prefix || normFile.startsWith(`${prefix}/`)) {
+        return true;
+      }
+    }
+    if (rawPattern.includes('*') || rawPattern.includes('?')) {
+      if (globToRegExp(rawPattern).test(normFile)) {
+        return true;
+      }
+      continue;
+    }
+    const cleanPrefix = rawPattern.replace(/\/+$/, '');
+    if (normFile === cleanPrefix || normFile.startsWith(`${cleanPrefix}/`)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function hasWildcard(str) {
