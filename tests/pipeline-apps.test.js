@@ -632,6 +632,7 @@ test('E2E Pipeline App 5: Declarative Slice Manifest (.factory/spec.json), PreTo
         stdio: 'ignore',
       });
 
+      runVerify({ cwd: wtApi });
       // Dry-run land previews without writing
       const dryLand = runLand({
         cwd: tempDir,
@@ -668,6 +669,7 @@ test('E2E Pipeline App 5: Declarative Slice Manifest (.factory/spec.json), PreTo
       execFileSync('git', ['add', '.'], { cwd: wtApi, stdio: 'ignore' });
       execFileSync('git', ['commit', '-m', 'committed rename in worktree'], { cwd: wtApi, stdio: 'ignore' });
 
+      runVerify({ cwd: wtApi });
       const committedLand = runLand({
         cwd: tempDir,
         worktree: wtApi,
@@ -706,6 +708,7 @@ test('E2E Pipeline App 5: Declarative Slice Manifest (.factory/spec.json), PreTo
       fs.writeFileSync(path.join(wtParWeb, 'web', 'parallel-web.js'), 'export const pWeb = 1;\n', 'utf8');
 
       // Land api slice and advance main HEAD before landing web slice
+      runVerify({ cwd: wtParApi });
       const landParApi = runLand({ cwd: tempDir, worktree: wtParApi, slice: 'api' });
       assert.equal(landParApi.ok, true);
       execFileSync('git', ['add', '.'], { cwd: tempDir, stdio: 'ignore' });
@@ -715,6 +718,7 @@ test('E2E Pipeline App 5: Declarative Slice Manifest (.factory/spec.json), PreTo
       });
 
       // Landing wtParWeb against updated main must use merge-base and NOT flag api/parallel-api.js
+      runVerify({ cwd: wtParWeb });
       const landParWeb = runLand({ cwd: tempDir, worktree: wtParWeb, slice: 'web' });
       assert.equal(
         landParWeb.ok,

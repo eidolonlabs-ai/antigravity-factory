@@ -32,6 +32,13 @@ jobs:
       - name: Run deterministic verification on root workspace
         run: node bin/agy-factory.js verify --require-tests --github-summary
 
+      - name: Install reference application dependencies and Chromium
+        run: |
+          npm ci --prefix examples/task-tracker/api
+          npm ci --prefix examples/task-tracker/web
+          cd examples/task-tracker/web
+          npx playwright install --with-deps chromium
+
       - name: Run deterministic verification on Task Tracker example
         run: node bin/agy-factory.js verify --cwd examples/task-tracker --require-tests --github-summary
 

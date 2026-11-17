@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "requireTests": true,
+  "verification": {
+    "requiredChecks": [{"component":"api","category":"test"},{"component":"web","category":"build"}],
+    "commands": [{"id":"live-stack","cwd":".","command":"node scripts/verify-stack.js","timeoutMs":1200000,"providesEvidence":"browser"}],
+    "requiredEvidence": ["browser"]
+  }
+}

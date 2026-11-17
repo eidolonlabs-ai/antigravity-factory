@@ -1,0 +1,26 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: tasks_user
+      POSTGRES_PASSWORD: ${TEST_DB_PASSWORD:?Set by verification runner}
+      POSTGRES_DB: tasks_db
+    ports: ["127.0.0.1::5432"]
+    volumes: ["./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tasks_user -d tasks_db"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  api:
+    build: ./api
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgres://tasks_user:${TEST_DB_PASSWORD}@db:5432/tasks_db
+    ports: ["127.0.0.1::4000"]
+    depends_on:
+      db: {condition: service_healthy}
+  web:
+    build: ./web
+    ports: ["127.0.0.1::80"]
+    depends_on: [api]

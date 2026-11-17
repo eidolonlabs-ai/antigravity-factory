@@ -87,3 +87,9 @@ Follow [factory-security-reviewer](../factory-security-reviewer/SKILL.md) as a *
 3. **Gate on verdict**:
    - **`CHANGES REQUESTED`**: Route exact `file:line` findings back to the owning builder (or apply minimal targeted fixes), then **re-run Stage 3 and Stage 4** so `.factory/verify-receipt.json` matches the final workspace digest.
    - **`APPROVE`**: Summarize delivered slices, verification receipt results, browser QA coverage, and security review sign-off for the user.
+
+## Completion and native ownership
+
+Use Antigravity's native delegation, browser and permission mechanisms; do not implement a second agent runner. Before landing, run factory verification in each worker and retain a fresh receipt. Landing checks conflicts and verifies the integrated state; it does not commit or push. Review the combined diff after integration.
+
+Finish with `$FACTORY_CLI status --cwd . --json`. Report configured mechanical status separately from independent review and live UI coverage. For a session exhausted by stop reminders, report the unfinished requirements; never describe termination as success. Missing or stale required evidence needs actual reinspection, not an invented record.

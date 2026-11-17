@@ -59,3 +59,11 @@ node ../../bin/agy-factory.js verify --cwd .
 # 3. Run static diff & security audit across files
 node ../../bin/agy-factory.js audit-diff --cwd . --all
 ```
+
+## Real database and browser acceptance
+
+Install API and web dependencies (`npm ci` in each directory), then run `npx playwright install chromium` in `web/`. From the example directory run `node scripts/verify-stack.js`. Docker/Compose and Chromium are required; missing prerequisites fail, never silently pass.
+
+The runner creates a unique Compose project with random loopback-only ports, checks readiness, executes PostgreSQL-backed API tests and Playwright user flows, proves health fails when the database stops, then removes its containers. It does not touch the normal development Compose stack. Logs and failure traces/screenshots are retained under `.factory/factory-*/`; browser artifacts have their own subdirectory. On abnormal process termination, inspect the project name and remove only that project with the acceptance Compose file.
+
+The example `.factory.json` requires API tests, web build and this live-stack check. `agy-factory verify --cwd examples/task-tracker --require-tests` therefore runs the full acceptance flow. Fast unit tests remain `npm test` in `api/`. Browser-only tests expect `WEB_BASE_URL`; API integration tests expect `API_BASE_URL` and `DATABASE_URL`, supplied by the runner.

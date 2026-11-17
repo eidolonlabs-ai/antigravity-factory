@@ -476,11 +476,11 @@ test('Hook CLI emits native Antigravity decisions', () => {
   }).decision, 'force_ask');
 });
 
-test('Defense-in-depth: Stop executionNum ceiling and PreToolUse shell FACTORY_SLICE enforcement', (t) => {
+test('Defense-in-depth: Stop uses session budget and PreToolUse enforces shell FACTORY_SLICE', (t) => {
   const tempRepo = createDirtyGitRepo(t);
   const enforcedEnv = { ...process.env, FACTORY_ENFORCE_STOP: '1' };
 
-  // executionNum >= 3 must allow stop even on fresh unverified dirty state
+  // Host execution sequence does not consume this plugin's session reminder budget.
   const cappedStop = evaluateStop(
     {
       terminationReason: 'NO_TOOL_CALL',
@@ -491,7 +491,7 @@ test('Defense-in-depth: Stop executionNum ceiling and PreToolUse shell FACTORY_S
     },
     { env: enforcedEnv }
   );
-  assert.equal(cappedStop.decision, 'allow');
+  assert.equal(cappedStop.decision, 'continue');
 
   // Configure .factory/spec.json with disjoint slices
   fs.mkdirSync(path.join(tempRepo, '.factory'), { recursive: true });

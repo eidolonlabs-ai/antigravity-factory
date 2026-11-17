@@ -62,3 +62,7 @@ Conclude with an explicit verdict block:
 - **Deterministic Scan**: `status` (`APPROVE_CANDIDATE` | `WARN` | `FLAGGED`), `filesScanned`, and finding count
 - **Semantic Audit Summary**: Brief verification notes across SQL/injection, XSS, secrets/config, and correctness/error handling with `file:line` references
 - **Required Fixes** *(only when `CHANGES REQUESTED`)*: Numbered list of blocking `file:line` issues and exact remediation steps (note that any subsequent code edit must re-run `agy-factory verify` before re-review)
+
+## Record the independent review outcome
+
+Before inspecting the diff, run `status --json` and retain its subject and policy digests. Keep application source read-only. After review, the coordinator may record the actual result via `evidence record --kind review --status PASS|FAIL --summary <review-summary> --producer <reviewer-description> --subject-digest <captured> --policy-digest <captured>`. This controlled metadata write is not permission to edit code or forge an attestation. Any source change requires fresh review. Caller-supplied producer text is attribution, not proof of independence. Finish with configured status plus a separate semantic-review verdict.

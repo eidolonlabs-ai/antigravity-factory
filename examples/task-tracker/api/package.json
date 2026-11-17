@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node --test tests/app.test.js"
+    "test": "node --test tests/app.test.js tests/db.test.js",
+    "test:integration": "node --test tests/integration.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

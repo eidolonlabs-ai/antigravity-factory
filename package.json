@@ -1,7 +1,7 @@
 {
   "name": "agy-software-factory",
-  "version": "1.0.0",
-  "description": "Portable multi-agent Software Factory plugin, deterministic verification CLI, lifecycle guardrails, and stage skills for Antigravity",
+  "version": "1.1.0",
+  "description": "Local Antigravity plugin harness with deterministic verification and portable factory interfaces",
   "license": "MIT",
   "author": "Mark Castillo",
   "homepage": "https://github.com/theRealMarkCastillo/agy-software-factory",
@@ -16,7 +16,8 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "verify": "node ./bin/agy-factory.js verify",
-    "audit": "node ./bin/agy-factory.js audit-diff"
+    "audit": "node ./bin/agy-factory.js audit-diff",
+    "package:plugin": "node scripts/package-plugin.js"
   },
   "engines": {
     "node": ">=20.0.0"

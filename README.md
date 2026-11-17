@@ -3,9 +3,9 @@
 [![Software Factory CI](https://github.com/theRealMarkCastillo/agy-software-factory/actions/workflows/ci.yml/badge.svg)](https://github.com/theRealMarkCastillo/agy-software-factory/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Antigravity Software Factory** is an **Antigravity template repository** with a zero-dependency, portable **Antigravity plugin + deterministic Node.js CLI** for **Antigravity** that turns multi-agent software development into a repeatable, auditable pipeline.
+**Software Factory** is a local **Antigravity plugin harness for solo developers**, with a portable, zero-dependency Node.js CLI. It uses Antigravity's native agents, delegation, browser operation and lifecycle controls, adding repeatable workflows, scope guardrails and verification evidence. Its structured interfaces can later serve a larger team factory.
 
-It pairs **probabilistic agent skills** (specification planning, isolated parallel swarm/worktree authoring, browser/E2E testing, and semantic code review) with **deterministic runtime gates** (stack detection, test/build verification with cryptographic workspace receipts, `file:line` diff security scanning, and `PreToolUse` / `Stop` lifecycle hooks).
+It pairs **probabilistic agent skills** (specification planning, isolated parallel swarm/worktree authoring, browser/E2E testing, and semantic code review) with **deterministic runtime gates** (stack detection, test/build verification with SHA-256 freshness receipts, `file:line` diff security scanning, and `PreToolUse` / `Stop` lifecycle hooks).
 
 ---
 
@@ -20,7 +20,7 @@ Prompt-only workflows fail silently at scale: parallel workers step on the same 
 | **Architecture & Planning** | `factory-spec-planner` locks shared contracts, acceptance criteria, and disjoint file slices | `agy-factory detect` inventories real stacks, `docker-compose.yml`, and runnable scripts |
 | **Parallel Build** | `factory-pipeline` fans out isolated swarm workers (`workspace: "share"`) per slice | `PreToolUse` hook blocks writes to `.env`, private keys, `.git/`, and destructive commands |
 | **QA & Verification** | `factory-qa-verifier` drives live UI user flows via the `browser` subagent | `agy-factory verify` enforces `NOT_RUN !== PASS` and writes `.factory/verify-receipt.json` |
-| **Completion Gate** | Portable `rules/AGENTS.md` requires verification before declaring done | Opt-in `Stop` hook checks receipt digest against `git diff` with bounded 1-retry protection |
+| **Completion Gate** | Portable `rules/AGENTS.md` requires verification before declaring done | Opt-in `Stop` hook checks configured status with a bounded per-conversation reminder budget |
 | **Security & Review** | `factory-security-reviewer` conducts read-only semantic review of `git diff` | `agy-factory audit-diff` flags hardcoded secrets, SQL interpolation, `eval`, and XSS sinks |
 
 ```mermaid
@@ -29,7 +29,7 @@ flowchart LR
     B --> V["Stage 3: QA Verification<br/>(verify receipt + browser E2E)"]
     V --> R["Stage 4: Security Review<br/>(audit-diff + semantic review)"]
     R -- "CHANGES REQUESTED" --> B
-    R -- "APPROVE" --> D["Verified Delivery<br/>(Stop gate satisfied)"]
+    R -- "APPROVE" --> D["Delivery Report<br/>(configured gates + review)"]
 ```
 
 ---
@@ -82,6 +82,17 @@ flowchart LR
 
 ---
 
+## Local harness and distribution
+
+Use one agent for small tasks and native Antigravity delegation only for independent slices. The plugin is not a scheduler, daemon, sealed evaluator or cross-platform adapter. Holdouts are guarded against selected modifications, not hidden. Receipts are unsigned local evidence.
+
+- [Implementation status, validation results and qualification limits](docs/implementation-status.md)
+- [Installable bundle and Marketplace preparation](docs/release.md)
+- [Policy, evidence, status and recovery contract](docs/verification-contract.md)
+- [Tested host compatibility and qualification limits](docs/compatibility.md)
+
+From this clone, run `agy plugin validate ./plugins/agy-software-factory --strict` then `agy plugin install ./plugins/agy-software-factory` to install natively. This changes your Antigravity profile. Project-local `init --mode link|copy` is an alternative registration/setup route. Avoid duplicate registration. Build a standalone archive with `npm run package:plugin`.
+
 ## Quickstart
 
 Requires **Node.js `>= 20.0.0`**. The factory CLI and plugin use zero external npm dependencies, so they run immediately without `npm install`. **Docker & Docker Compose are optional**—if `docker compose` is installed and a repository includes `docker-compose.yml`, `agy-factory verify` validates it automatically; if Docker is not installed (or no compose file exists), the check is recorded as `NOT_RUN` without blocking verification.
@@ -105,7 +116,7 @@ node bin/agy-factory.js audit-diff
 # 1. Detect multi-service stack (docker-compose.yml + api + web)
 node bin/agy-factory.js detect --cwd examples/task-tracker
 
-# 2. Run deterministic hygiene, Docker Compose config, API unit tests, and Web Vite build
+# 2. Requires installed app dependencies, Docker and Chromium: run configured live acceptance too
 node bin/agy-factory.js verify --cwd examples/task-tracker --require-tests
 
 # 3. Audit all files in the example app for secrets and injection sinks
@@ -151,9 +162,15 @@ node bin/agy-factory.js plan [--cwd <dir>] [--init] [--slice <name>] [--json]
 
 ---
 
+### `agy-factory status` and `evidence record`
+
+`status --cwd <project> --json [--conversation <id>]` is read-only: exit 0 means VERIFIED, 1 means UNVERIFIED/FAILED/EXHAUSTED, and 2 means invalid configuration or invocation. Require specific component checks and browser/review evidence through `.factory.json`; see the [contract](docs/verification-contract.md).
+
+Capture the returned subject/policy digests before inspection. After actual native browser or independent review work, use `evidence record --cwd <project> --kind browser|review --status PASS|FAIL --summary <text> --producer <text> --subject-digest <captured> --policy-digest <captured> [--artifact <path>]`. State changes invalidate recording. Producer text does not authenticate independence.
+
 ### `agy-factory verify`
 
-Executes deterministic QA checks across the workspace and writes a signed verification receipt to `<cwd>/.factory/verify-receipt.json`.
+Executes deterministic QA checks across the workspace and writes a versioned freshness receipt to `<cwd>/.factory/verify-receipt.json`.
 
 ```bash
 node bin/agy-factory.js verify [--cwd <dir>] [--require-tests] [--skip-docker] [--format text|json|markdown] [--github-summary]
@@ -213,7 +230,7 @@ node bin/agy-factory.js audit-diff [--cwd <dir>] [--base <git-ref>] [--allow-pat
 
 ### `agy-factory land`
 
-Audits an isolated worker `git worktree` against its assigned slice ownership (`--allow-paths` or `--slice`) and security rules, then lands only the verified owned files into the coordinator workspace.
+Audits an isolated worker `git worktree` against its assigned slice ownership (`--allow-paths` or `--slice`) and security rules, requires fresh worker verification, rejects divergent target/staged edits and symlink paths, then applies owned files and verifies the integrated workspace. Failed verification rolls back only unchanged lander writes; concurrent edits are preserved with recovery details. `--force` overrides regex findings only, never ownership/conflicts. Review the combined result afterward; no commit or push is implicit.
 
 ```bash
 node bin/agy-factory.js land --worktree <dir> [--cwd <dir>] [--slice <name> | --allow-paths <list>] [--dry-run] [--force] [--json]
@@ -265,17 +282,18 @@ When the `agy-software-factory` plugin is enabled, [hooks.json](plugins/agy-soft
 
 Runs [pre-tool-guard.js](plugins/agy-software-factory/bin/pre-tool-guard.js) before `write_file`, `edit_file`, and `run_command`:
 - **Secret & Git File Protection (`deny`)**: Blocks agent writes/edits to `.env` and `.env.*` (while explicitly allowing `.env.example`, `.env.sample`, `.env.template`, and `.env.test`), SSH/PEM private keys (`id_rsa`, `id_ed25519`, `*.pem`, `*.key`), and `.git/config` or `.git/HEAD`.
-- **Receipt & Holdout Test Integrity (`deny`)**: Blocks direct `write_file` / `edit_file` calls targeting `.factory/**` (preventing agents from forging `.factory/verify-receipt.json`) and protected holdout suites (`holdout/**` or `*.holdout.test.*` / `*.holdout.spec.*`).
+- **Receipt & Holdout Test Integrity (`deny`)**: Blocks direct `write_file` / `edit_file` calls targeting `.factory/**` (guarding supported tool writes to verification records; this is not a process sandbox) and protected holdout suites (`holdout/**` or `*.holdout.test.*` / `*.holdout.spec.*`).
 - **Catastrophic Shell Protection (`deny`)**: Blocks destructive system commands such as `rm -rf /`, `rm -rf ~`, `mkfs.*`, and fork bombs.
 - **Destructive Git Confirmation (`force_ask`)**: Requires explicit user confirmation before `git reset --hard`, `git push --force` / `-f`, or `git clean -fd` / `-fdx`.
 - **Fail-Safe**: Malformed or unrelated payloads default to `{ "decision": "allow" }`.
 
-### 2. Bounded Opt-In `Stop` Verification Gate (`factory-stop-verify-gate`)
+### 2. Bounded Opt-In `Stop` Verification Reminder (`factory-stop-verify-gate`)
 
 Runs [stop-verify-gate.js](plugins/agy-software-factory/bin/stop-verify-gate.js) when the agent goes idle (`terminationReason: "NO_TOOL_CALL"` and `fullyIdle: true`):
 - **Opt-In Activation**: Off by default so exploratory chats are never interrupted. Enable per-repository by setting `"enforceStopVerify": true` in `.factory.json`, or per-session via environment variable `FACTORY_ENFORCE_STOP=1`.
-- **Receipt & Digest Check**: If the git workspace has uncommitted changes, verifies that `<cwd>/.factory/verify-receipt.json` exists with `"ok": true` and its SHA-256 `digest` matches the current workspace state (`git status --porcelain -uall` + `git diff HEAD` + untracked file contents). Any post-verify edit or file deletion invalidates the receipt and returns `{ "decision": "continue", "reason": "..." }` prompting the agent to re-run `agy-factory verify`.
-- **Bounded Loop Protection**: Records `${conversationId}:${stateHash}` in `.factory/stop-gate-state.json`. If the exact same conversation and git state have already been prompted once, the second `Stop` check returns `{ "decision": "allow" }`—guaranteeing the agent can never get stuck in an infinite stop loop.
+- **Freshness Check**: Versioned status binds HEAD, staged index, working source bytes/modes, symlink target text, and policy. Both normal `model_stop` and legacy `NO_TOOL_CALL` payloads are supported. Passing checks do not stand in for required review/browser evidence.
+- **Bounded Loop Protection**: `stop.maxContinuations` is 0–3 (default 1). Edits do not reset the conversation budget. Exhaustion allows the host to end while conversation-specific status remains `EXHAUSTED`; this is not successful completion. Host hook errors can fail open.
+- **Mechanical completion**: Use `agy-factory status --json` (exit 0 only VERIFIED). VERIFIED describes configured requirements; independent semantic review remains a workflow step even when not configured as required evidence.
 
 ---
 

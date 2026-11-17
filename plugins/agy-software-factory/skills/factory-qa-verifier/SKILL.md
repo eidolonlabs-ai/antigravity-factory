@@ -34,10 +34,10 @@ Review every check reported by `agy-factory verify` (`hygiene`, `docker-compose`
 2. **`NOT_RUN` Is Never `PASS`**:
    - `NOT_RUN` means no script/tool was configured (or Docker CLI is not installed / `--skip-docker` was set)—it does **not** mean the check succeeded. Docker Compose validation is optional when `docker` is unavailable, reporting `NOT_RUN` without failing the build.
    - Never report "all checks passed" if `test` is `NOT_RUN`. With `--require-tests` (or `"requireTests": true` in `.factory.json`), `agy-factory verify` enforces that at least one component `test` check achieves `PASS`, setting `ok: false` and exiting non-zero otherwise.
-3. **Validate `.factory/verify-receipt.json` & Dark Factory Guardrails**:
+3. **Validate `.factory/verify-receipt.json` & Local Guardrails**:
    - Read `<cwd>/.factory/verify-receipt.json` and confirm `"ok": true`.
    - Note that `.factory/**` (receipt integrity) and `holdout/**` / `*.holdout.test.*` (holdout test suites) are protected by `pre-tool-guard.js` against direct agent edits or shell tampering.
-   - The receipt records a SHA-256 `digest` of the current git status, diff, and untracked file contents. Any subsequent code edit invalidates the receipt and requires re-running `agy-factory verify` (which also satisfies the `Stop` verification gate hook when enabled).
+   - The receipt binds HEAD, staged index, working source content/modes, symlink target text and policy with SHA-256 freshness values; it is not signed. Any subsequent source, commit, index or policy change invalidates the receipt and requires re-running `agy-factory verify` (which also satisfies the `Stop` verification gate hook when enabled).
 
 ## Step 3: Live Web UI Verification (`browser` Subagent or E2E Browser Runner)
 
@@ -59,3 +59,7 @@ Output a concise QA summary containing:
 - **Check Breakdown**: Per-component `PASS` / `FAIL` / `NOT_RUN` table
 - **Browser E2E Coverage**: Flows exercised and console/network health (or `N/A — no web UI`)
 - **Actionable Failures** *(if `QA FAIL`)*: Exact reproduction commands and failure logs
+
+## Record observed browser evidence
+
+Before live checks, run `status --json` and retain its `subjectDigest` and `policyDigest` (nonzero status is expected before requirements are satisfied). After actually exercising the flows, use `evidence record --kind browser --status PASS|FAIL --summary <observed-result> --producer <browser-runner> --subject-digest <captured> --policy-digest <captured>` with existing artifacts when available. A changed subject requires repeating the checks. Explicitly configured browser commands can supply this evidence through a fresh passing receipt. Never write internal records directly or report NOT_RUN as PASS. Finish with status; stopping is not proof of verification.

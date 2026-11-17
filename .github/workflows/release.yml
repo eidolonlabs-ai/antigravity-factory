@@ -1,0 +1,21 @@
+name: Build plugin release candidate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - run: npm test
+      - run: npm run package:plugin
+      - run: node scripts/smoke-plugin.js dist/agy-software-factory-1.1.0.tgz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: software-factory-release-candidate
+          path: dist/
+# This builds an artifact only. Native qualification and publication are separate.
