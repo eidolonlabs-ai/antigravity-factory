@@ -28,7 +28,7 @@ Commands:
   audit-diff             Scan git diff / untracked files for secrets, sinks, and slice boundaries
   land                   Verify and land an isolated git worktree slice into the workspace
   twin                   Start a zero-dependency Digital Twin Universe (DTU) mock HTTP server
-  init [targetDir]       Configure Software Factory for Antigravity, Claude, Gemini, or Codex
+  init [targetDir]       Configure Software Factory for Antigravity
 
 Options:
   --cwd <dir>            Target working directory (defaults to current directory)
@@ -48,7 +48,8 @@ Options:
   --routes <file>        JSON routes file for twin server
   --port <number>        TCP port for twin server (default: 0 for random available port)
   --mode <link|copy>     Plugin installation mode for init (default: link)
-  --target <targets>     Agent target(s) for init: agy | claude | gemini | codex | all (default: agy)
+  --target <targets>     Antigravity target for init: agy (default)
+  --git-hook             Install optional Git pre-commit verification hook
   -h, --help             Show this help message
 `;
 
@@ -162,21 +163,6 @@ function formatInitHuman(res) {
   if (res.pluginsJsonPath) {
     lines.push(`  Plugins Manifest : ${res.pluginsJsonPath}`);
   }
-  if (res.claudeSettingsPath) {
-    lines.push(`  Claude Settings  : ${res.claudeSettingsPath}`);
-  }
-  if (res.claudeMdPath) {
-    lines.push(`  Claude Rules     : ${res.claudeMdPath}`);
-  }
-  if (res.geminiSettingsPath) {
-    lines.push(`  Gemini Settings  : ${res.geminiSettingsPath}`);
-  }
-  if (res.geminiMdPath) {
-    lines.push(`  Gemini Rules     : ${res.geminiMdPath}`);
-  }
-  if (res.agentsMdPath) {
-    lines.push(`  Agents Rules     : ${res.agentsMdPath}`);
-  }
   if (res.gitPreCommitPath) {
     lines.push(`  Git Pre-Commit   : ${res.gitPreCommitPath}`);
   }
@@ -277,6 +263,7 @@ export function runCli(
         port: { type: 'string' },
         mode: { type: 'string', default: 'link' },
         target: { type: 'string', default: 'agy' },
+        'git-hook': { type: 'boolean', default: false },
         help: { type: 'boolean', short: 'h', default: false },
       },
     });
@@ -424,7 +411,8 @@ export function runCli(
         const result = runInit({
           targetDir,
           mode: values.mode || 'link',
-          target: values.target || 'agy',
+          target: values.target,
+          gitHook: values['git-hook'],
         });
         if (values.json || values.format === 'json') {
           out(JSON.stringify(result, null, 2));

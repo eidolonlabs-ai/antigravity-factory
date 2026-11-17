@@ -824,44 +824,31 @@ test('E2E Pipeline App 6: Digital Twin Universe (DTU) behavioral HTTP mock, stat
   }
 });
 
-test('E2E Pipeline App 7: Cross-Agent Portability (init --target all), Claude/Gemini Hook Payloads, and Markdown/SARIF output', () => {
-  withTempDir('agy-e2e-multi-agent-', (tempDir) => {
+test('E2E Pipeline App 7: Antigravity installation and Markdown/SARIF output', () => {
+  withTempDir('agy-e2e-native-', (tempDir) => {
     initGitRepo(tempDir);
-
-    const initRes = runInit({
-      cwd: tempDir,
-      mode: 'copy',
-      target: 'all',
-    });
-
+    const initRes = runInit({ cwd: tempDir, mode: 'copy' });
     assert.ok(fs.existsSync(initRes.pluginsJsonPath));
-    assert.ok(fs.existsSync(initRes.claudeSettingsPath));
-    assert.ok(fs.existsSync(path.join(tempDir, 'CLAUDE.md')));
-    assert.ok(fs.existsSync(initRes.geminiSettingsPath));
-    assert.ok(fs.existsSync(initRes.gitPreCommitPath));
+    assert.equal(initRes.gitPreCommitPath, undefined);
+    for (const name of ['.claude', '.gemini', 'CLAUDE.md', 'GEMINI.md', '.agents/skills']) {
+      assert.equal(fs.existsSync(path.join(tempDir, name)), false);
+    }
+    for (const target of ['claude', 'gemini', 'codex', 'all', 'agy,claude']) {
+      const destination = path.join(tempDir, 'invalid-target');
+      assert.throws(() => runInit({ targetDir: destination, target }), /Only Antigravity/);
+      assert.equal(fs.existsSync(destination), false);
+    }
 
-    // Verify Claude Code payload compatibility in PreToolUse & Stop hooks
-    assert.equal(
-      evaluatePreToolUse({
-        tool_name: 'Write',
-        tool_input: { file_path: '.env' },
-      }).decision,
-      'deny'
-    );
-    assert.equal(
-      evaluatePreToolUse({
-        tool_name: 'Bash',
-        tool_input: { command: 'rm -rf /' },
-      }).decision,
-      'deny'
-    );
-    assert.equal(
-      evaluateStop(
-        { workspacePaths: [tempDir], stop_hook_active: true },
-        { env: { ...process.env, FACTORY_ENFORCE_STOP: '1' } }
-      ).decision,
-      'allow'
-    );
+    let initOutput = '';
+    const initIo = {
+      stdout: { write: (value) => { initOutput += value; } },
+      stderr: { write: () => {} },
+    };
+    assert.equal(runCli(['init', tempDir, '--mode', 'copy', '--git-hook', '--json'], initIo), 0);
+    assert.ok(fs.existsSync(JSON.parse(initOutput).gitPreCommitPath));
+    const rejectedDestination = path.join(tempDir, 'rejected-cli');
+    assert.equal(runCli(['init', rejectedDestination, '--target', 'all'], initIo), 1);
+    assert.equal(fs.existsSync(rejectedDestination), false);
 
     // Verify Markdown & SARIF CLI output formats
     let stdoutBuf = '';
@@ -914,7 +901,7 @@ test('E2E Pipeline App 7: Cross-Agent Portability (init --target all), Claude/Ge
   });
 });
 
-test('E2E Pipeline App 8: Non-destructive init merging, git worktrees, CLAUDE.md rule path, and Twin CLI bounds', async () => {
+test('E2E Pipeline App 8: Non-destructive init, git worktrees, and Twin CLI bounds', async () => {
   withTempDir('agy-e2e-init-worktree-', (tempDir) => {
     initGitRepo(tempDir);
     fs.writeFileSync(path.join(tempDir, 'index.js'), 'export const ok = true;\n', 'utf8');
@@ -952,41 +939,17 @@ test('E2E Pipeline App 8: Non-destructive init merging, git worktrees, CLAUDE.md
     );
 
     // Run init twice to verify non-destructive merge AND idempotency
-    runInit({ cwd: tempDir, mode: 'copy', target: 'all' });
-    const secondInit = runInit({ cwd: tempDir, mode: 'copy', target: 'all' });
+    runInit({ cwd: tempDir, mode: 'copy', gitHook: true });
+    const secondInit = runInit({ cwd: tempDir, mode: 'copy', gitHook: true });
 
-    const claudeSettings = JSON.parse(fs.readFileSync(secondInit.claudeSettingsPath, 'utf8'));
-    assert.deepEqual(claudeSettings.permissions, { allow: ['Read'] });
-    assert.equal(claudeSettings.hooks.Notification.length, 1);
-    assert.equal(claudeSettings.hooks.PreToolUse.length, 1);
-    assert.equal(claudeSettings.hooks.Stop.length, 1);
-
-    const geminiSettings = JSON.parse(fs.readFileSync(secondInit.geminiSettingsPath, 'utf8'));
-    assert.deepEqual(geminiSettings.mcpServers, {
-      existingServer: { command: 'node', args: ['mcp.js'] },
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(tempDir, '.gemini/settings.json'), 'utf8')), {
+      mcpServers: { existingServer: { command: 'node', args: ['mcp.js'] } },
     });
-    assert.equal(geminiSettings.hooks.BeforeTool.length, 1);
-    assert.equal(geminiSettings.hooks.AfterAgent.length, 1);
-
-    // External repo without root AGENTS.md points CLAUDE.md and GEMINI.md at bundled plugin rules, and scaffolds AGENTS.md for Codex
-    const claudeMd = fs.readFileSync(path.join(tempDir, 'CLAUDE.md'), 'utf8');
-    assert.ok(claudeMd.includes('@.agents/plugins/agy-software-factory/rules/AGENTS.md'));
-    assert.ok(claudeMd.includes('factory-pipeline/SKILL.md'));
-
-    assert.ok(secondInit.geminiMdPath);
-    const geminiMd = fs.readFileSync(secondInit.geminiMdPath, 'utf8');
-    assert.ok(geminiMd.includes('@.agents/plugins/agy-software-factory/rules/AGENTS.md'));
-    assert.ok(geminiMd.includes('factory-qa-verifier/SKILL.md'));
-
-    assert.ok(secondInit.agentsMdPath);
-    const codexAgentsMd = fs.readFileSync(secondInit.agentsMdPath, 'utf8');
-    assert.ok(codexAgentsMd.includes('multi-agent Software Factory'));
-    assert.ok(codexAgentsMd.includes('factory-security-reviewer/SKILL.md'));
-
-    // Native skill directories installed for Claude Code (.claude/skills), Gemini CLI (.gemini/skills), and Codex (.agents/skills)
-    assert.ok(fs.existsSync(path.join(secondInit.claudeSkillsDir, 'factory-pipeline', 'SKILL.md')));
-    assert.ok(fs.existsSync(path.join(secondInit.geminiSkillsDir, 'factory-qa-verifier', 'SKILL.md')));
-    assert.ok(fs.existsSync(path.join(secondInit.codexSkillsDir, 'factory-spec-planner', 'SKILL.md')));
+    const settings = JSON.parse(fs.readFileSync(path.join(tempDir, '.claude/settings.json'), 'utf8'));
+    assert.deepEqual(settings.permissions, { allow: ['Read'] });
+    assert.deepEqual(Object.keys(settings.hooks), ['Notification']);
+    assert.equal(fs.existsSync(path.join(tempDir, 'CLAUDE.md')), false);
+    assert.equal(fs.existsSync(path.join(tempDir, 'GEMINI.md')), false);
 
     // Custom pre-commit hook preserved alongside factory gate lines
     const preCommitText = fs.readFileSync(secondInit.gitPreCommitPath, 'utf8');
@@ -996,12 +959,12 @@ test('E2E Pipeline App 8: Non-destructive init merging, git worktrees, CLAUDE.md
     // Verify git worktree (.git file with gitdir:) support without ENOTDIR
     const wtDir = path.join(tempDir, '..', `wt-init-${Date.now()}`);
     try {
-      execFileSync('git', ['worktree', 'add', '-b', 'wt-codex-branch', wtDir], {
+      execFileSync('git', ['worktree', 'add', '-b', 'wt-agy-branch', wtDir], {
         cwd: tempDir,
         stdio: 'ignore',
       });
       assert.equal(fs.statSync(path.join(wtDir, '.git')).isFile(), true);
-      const wtInit = runInit({ cwd: wtDir, mode: 'copy', target: 'codex' });
+      const wtInit = runInit({ cwd: wtDir, mode: 'copy', gitHook: true });
       assert.ok(wtInit.gitPreCommitPath);
       assert.ok(fs.existsSync(wtInit.gitPreCommitPath));
     } finally {

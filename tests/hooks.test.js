@@ -467,81 +467,13 @@ test('PreToolUse guard blocks receipt forgery (.factory/**) and holdout test tam
   assert.equal(allowNormalTest.decision, 'allow');
 });
 
-test('Hook CLI wire output translates accurately for Antigravity, Claude Code, and Gemini CLI', (t) => {
-  const tempRepo = createDirtyGitRepo(t);
-  const enforcedEnv = { ...process.env, FACTORY_ENFORCE_STOP: '1' };
-
-  // 1. Claude Code PreToolUse wire format
-  const claudeDeny = runHookProcess(PRE_TOOL_BIN, {
-    hook_event_name: 'PreToolUse',
-    tool_name: 'Write',
-    tool_input: { file_path: '.env' },
-  });
-  assert.equal(claudeDeny.hookSpecificOutput?.hookEventName, 'PreToolUse');
-  assert.equal(claudeDeny.hookSpecificOutput?.permissionDecision, 'deny');
-  assert.match(claudeDeny.hookSpecificOutput?.permissionDecisionReason, /\.env/i);
-
-  const claudeAsk = runHookProcess(PRE_TOOL_BIN, {
-    hook_event_name: 'PreToolUse',
-    tool_name: 'Bash',
-    tool_input: { command: 'git reset --hard HEAD~1' },
-  });
-  assert.equal(claudeAsk.hookSpecificOutput?.permissionDecision, 'ask');
-
-  const claudeAllow = runHookProcess(PRE_TOOL_BIN, {
-    hook_event_name: 'PreToolUse',
-    tool_name: 'Write',
-    tool_input: { file_path: 'src/index.js' },
-  });
-  assert.equal(claudeAllow.hookSpecificOutput?.permissionDecision, 'allow');
-
-  // 2. Gemini CLI BeforeTool wire format
-  const geminiAsk = runHookProcess(PRE_TOOL_BIN, {
-    hook_event_name: 'BeforeTool',
-    tool_name: 'run_shell_command',
-    tool_input: { command: 'git push --force origin main' },
-  });
-  assert.equal(geminiAsk.decision, 'ask');
-  assert.match(geminiAsk.reason, /force/i);
-
-  // 3. Claude Code Stop & Gemini CLI AfterAgent wire format ("block" vs Antigravity "continue")
-  const claudeStopBlock = runHookProcess(
-    STOP_GATE_BIN,
-    {
-      hook_event_name: 'Stop',
-      stop_hook_active: false,
-      cwd: tempRepo,
-      session_id: 'claude-stop-1',
-    },
-    enforcedEnv
-  );
-  assert.equal(claudeStopBlock.decision, 'block');
-  assert.match(claudeStopBlock.reason, /verify/i);
-
-  const claudeStopAllow = runHookProcess(
-    STOP_GATE_BIN,
-    {
-      hook_event_name: 'Stop',
-      stop_hook_active: true,
-      cwd: tempRepo,
-      session_id: 'claude-stop-1',
-    },
-    enforcedEnv
-  );
-  assert.deepEqual(claudeStopAllow, {});
-
-  // Mutate file so stateHash is fresh for Gemini AfterAgent test
-  fs.writeFileSync(path.join(tempRepo, 'app.js'), 'export const value = 3;\n', 'utf8');
-  const geminiStopBlock = runHookProcess(
-    STOP_GATE_BIN,
-    {
-      hook_event_name: 'AfterAgent',
-      cwd: tempRepo,
-      session_id: 'gemini-stop-1',
-    },
-    enforcedEnv
-  );
-  assert.equal(geminiStopBlock.decision, 'block');
+test('Hook CLI emits native Antigravity decisions', () => {
+  assert.equal(runHookProcess(PRE_TOOL_BIN, {
+    toolCall: { name: 'write_file', args: { Path: '.env' } },
+  }).decision, 'deny');
+  assert.equal(runHookProcess(PRE_TOOL_BIN, {
+    toolCall: { name: 'run_command', args: { CommandLine: 'git push --force' } },
+  }).decision, 'force_ask');
 });
 
 test('Defense-in-depth: Stop executionNum ceiling and PreToolUse shell FACTORY_SLICE enforcement', (t) => {
@@ -603,24 +535,6 @@ test('Defense-in-depth: Stop executionNum ceiling and PreToolUse shell FACTORY_S
     { env: sliceEnv }
   );
   assert.equal(blockedCp.decision, 'deny');
-
-  // Claude Code MultiEdit with per-item edits[].file_path out-of-slice or .env is blocked
-  const blockedMultiEditSlice = evaluatePreToolUse(
-    {
-      cwd: tempRepo,
-      hook_event_name: 'PreToolUse',
-      tool_name: 'MultiEdit',
-      tool_input: {
-        edits: [
-          { file_path: path.join(tempRepo, 'api', 'ok.js'), old_string: 'a', new_string: 'b' },
-          { file_path: path.join(tempRepo, 'web', 'forbidden.js'), old_string: 'a', new_string: 'b' },
-        ],
-      },
-    },
-    { env: sliceEnv }
-  );
-  assert.equal(blockedMultiEditSlice.decision, 'deny');
-  assert.match(blockedMultiEditSlice.reason, /out-of-slice/i);
 
   // Shell redirection to in-slice file, /dev/null, and fd duplication (1>&2) are allowed
   const allowedInSlice = evaluatePreToolUse(

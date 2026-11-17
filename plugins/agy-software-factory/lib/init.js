@@ -72,219 +72,6 @@ function ensureGitignoreHasFactory(gitignorePath) {
   fs.writeFileSync(gitignorePath, `${content}${prefix}.factory/\n`, 'utf8');
 }
 
-const VALID_TARGETS = new Set(['agy', 'claude', 'gemini', 'codex', 'all']);
-
-function parseTargets(rawTarget = 'agy') {
-  const list = String(rawTarget || 'agy')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  if (list.length === 0) return new Set(['agy']);
-  for (const t of list) {
-    if (!VALID_TARGETS.has(t)) {
-      throw new Error(
-        `Invalid init target "${t}". Expected one of: agy, claude, gemini, codex, all.`
-      );
-    }
-  }
-  if (list.includes('all')) {
-    return new Set(['agy', 'claude', 'gemini', 'codex']);
-  }
-  return new Set(list);
-}
-
-function upsertHookSettingsJson(settingsPath, eventEntries) {
-  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-
-  let settings = {};
-  if (fs.existsSync(settingsPath)) {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        settings = { ...parsed };
-      }
-    } catch {
-      settings = {};
-    }
-  }
-
-  const hooksObj =
-    settings.hooks && typeof settings.hooks === 'object' && !Array.isArray(settings.hooks)
-      ? { ...settings.hooks }
-      : {};
-
-  for (const [eventName, { matcher, command }] of eventEntries) {
-    const existingList = Array.isArray(hooksObj[eventName])
-      ? [...hooksObj[eventName]]
-      : [];
-    const alreadyRegistered = existingList.some(
-      (entry) =>
-        entry &&
-        typeof entry === 'object' &&
-        Array.isArray(entry.hooks) &&
-        entry.hooks.some((h) => h && typeof h === 'object' && h.command === command)
-    );
-    if (!alreadyRegistered) {
-      existingList.push({
-        matcher,
-        hooks: [{ type: 'command', command }],
-      });
-    }
-    hooksObj[eventName] = existingList;
-  }
-
-  settings.hooks = hooksObj;
-  fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
-}
-
-function buildAgentInstructionsMarkdown(title, resolvedTarget, hookDirRef) {
-  const normRef = hookDirRef.split(path.sep).join('/');
-  const hasRootAgentsMd = fs.existsSync(path.join(resolvedTarget, 'AGENTS.md'));
-  const rulesImport = hasRootAgentsMd
-    ? '@AGENTS.md'
-    : `@${path.posix.join(normRef, 'rules', 'AGENTS.md')}`;
-  const cliPath = path.posix.join(normRef, 'bin', 'agy-factory.js');
-  const skillsDir = path.posix.join(normRef, 'skills');
-
-  return [
-    `# ${title}`,
-    '',
-    rulesImport,
-    '',
-    '## Software Factory CLI & Stage Playbooks',
-    '',
-    `- **Stage 1 (Plan)**: Read \`${skillsDir}/factory-spec-planner/SKILL.md\`, run \`node "${cliPath}" detect\`, and validate \`.factory/spec.json\` (\`node "${cliPath}" plan\`).`,
-    `- **Stage 2 (Isolate)**: Read \`${skillsDir}/factory-pipeline/SKILL.md\`, run parallel slices in isolated worktrees with \`FACTORY_SLICE=<slice>\`, and merge via \`node "${cliPath}" land --worktree <dir> --slice <slice>\`.`,
-    `- **Stage 3 (Verify)**: Read \`${skillsDir}/factory-qa-verifier/SKILL.md\` and run \`node "${cliPath}" verify --require-tests\` before completion.`,
-    `- **Stage 4 (Review)**: Read \`${skillsDir}/factory-security-reviewer/SKILL.md\` and run \`node "${cliPath}" audit-diff\` + a read-only semantic diff review.`,
-    '',
-  ].join('\n');
-}
-
-function installAgentSkills(skillsDestRoot, sourceSkillsDir, mode) {
-  if (!fs.existsSync(sourceSkillsDir)) {
-    return null;
-  }
-  fs.mkdirSync(skillsDestRoot, { recursive: true });
-  const entries = fs.readdirSync(sourceSkillsDir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const srcSkill = path.join(sourceSkillsDir, entry.name);
-    if (!fs.existsSync(path.join(srcSkill, 'SKILL.md'))) continue;
-    const destSkill = path.join(skillsDestRoot, entry.name);
-
-    if (mode === 'link') {
-      try {
-        const existingStat = fs.lstatSync(destSkill);
-        if (existingStat.isSymbolicLink() || existingStat.isDirectory()) {
-          if (fs.existsSync(destSkill) && fs.realpathSync(destSkill) === fs.realpathSync(srcSkill)) {
-            continue;
-          }
-          fs.rmSync(destSkill, { recursive: true, force: true });
-        }
-      } catch {
-        // Destination does not exist yet
-      }
-      try {
-        fs.symlinkSync(srcSkill, destSkill, 'dir');
-        continue;
-      } catch {
-        // Fallback to copy if symlinks are restricted
-      }
-    }
-
-    const srcReal = fs.realpathSync(srcSkill);
-    const destReal = fs.existsSync(destSkill) ? fs.realpathSync(destSkill) : null;
-    if (srcReal !== destReal) {
-      fs.cpSync(srcSkill, destSkill, { recursive: true, force: true });
-    }
-  }
-  return skillsDestRoot;
-}
-
-function writeClaudeConfig(resolvedTarget, hookDirRef, pluginDir, mode) {
-  const claudeDir = path.join(resolvedTarget, '.claude');
-  const settingsPath = path.join(claudeDir, 'settings.json');
-  const guardCmd = `node "${path.join(hookDirRef, 'bin', 'pre-tool-guard.js')}"`;
-  const stopCmd = `node "${path.join(hookDirRef, 'bin', 'stop-verify-gate.js')}"`;
-
-  upsertHookSettingsJson(settingsPath, [
-    ['PreToolUse', { matcher: 'Write|Edit|MultiEdit|Bash', command: guardCmd }],
-    ['Stop', { matcher: '*', command: stopCmd }],
-  ]);
-
-  const claudeSkillsDir = installAgentSkills(
-    path.join(claudeDir, 'skills'),
-    path.join(pluginDir, 'skills'),
-    mode
-  );
-
-  const claudeMdPath = path.join(resolvedTarget, 'CLAUDE.md');
-  if (!fs.existsSync(claudeMdPath)) {
-    const claudeMd = buildAgentInstructionsMarkdown(
-      'Claude Code — Software Factory Instructions',
-      resolvedTarget,
-      hookDirRef
-    );
-    fs.writeFileSync(claudeMdPath, claudeMd, 'utf8');
-  }
-  return { claudeSettingsPath: settingsPath, claudeMdPath, claudeSkillsDir };
-}
-
-function writeGeminiConfig(resolvedTarget, hookDirRef, pluginDir, mode) {
-  const geminiDir = path.join(resolvedTarget, '.gemini');
-  const settingsPath = path.join(geminiDir, 'settings.json');
-  const guardCmd = `node "${path.join(hookDirRef, 'bin', 'pre-tool-guard.js')}"`;
-  const stopCmd = `node "${path.join(hookDirRef, 'bin', 'stop-verify-gate.js')}"`;
-
-  upsertHookSettingsJson(settingsPath, [
-    ['BeforeTool', { matcher: '.*', command: guardCmd }],
-    ['AfterAgent', { matcher: '.*', command: stopCmd }],
-  ]);
-
-  const geminiSkillsDir = installAgentSkills(
-    path.join(geminiDir, 'skills'),
-    path.join(pluginDir, 'skills'),
-    mode
-  );
-
-  const geminiMdPath = path.join(resolvedTarget, 'GEMINI.md');
-  if (!fs.existsSync(geminiMdPath)) {
-    const geminiMd = buildAgentInstructionsMarkdown(
-      'Gemini CLI — Software Factory Instructions',
-      resolvedTarget,
-      hookDirRef
-    );
-    fs.writeFileSync(geminiMdPath, geminiMd, 'utf8');
-  }
-  return { geminiSettingsPath: settingsPath, geminiMdPath, geminiSkillsDir };
-}
-
-function ensureCodexAgentsMd(resolvedTarget, pluginDir, hookDirRef) {
-  const agentsMdPath = path.join(resolvedTarget, 'AGENTS.md');
-  if (!fs.existsSync(agentsMdPath)) {
-    const rulesFile = path.join(pluginDir, 'rules', 'AGENTS.md');
-    const baseRules = fs.existsSync(rulesFile)
-      ? fs.readFileSync(rulesFile, 'utf8').trimEnd()
-      : '# Software Factory Rules';
-    const normRef = hookDirRef.split(path.sep).join('/');
-    const cliPath = path.posix.join(normRef, 'bin', 'agy-factory.js');
-    const skillsDir = path.posix.join(normRef, 'skills');
-    const content = [
-      baseRules,
-      '',
-      '## CLI & Stage Playbooks',
-      '',
-      `- **Detect & Plan**: \`node "${cliPath}" detect\` and \`node "${cliPath}" plan --init\` (see \`${skillsDir}/factory-spec-planner/SKILL.md\`).`,
-      `- **Isolate & Land Worktrees**: Run slice builders with \`FACTORY_SLICE=<slice>\` and land via \`node "${cliPath}" land --worktree <dir> --slice <slice>\` (see \`${skillsDir}/factory-pipeline/SKILL.md\`).`,
-      `- **Verify & Audit**: Run \`node "${cliPath}" verify --require-tests\` and \`node "${cliPath}" audit-diff\` before committing or finishing (see \`${skillsDir}/factory-qa-verifier/SKILL.md\` and \`${skillsDir}/factory-security-reviewer/SKILL.md\`).`,
-      '',
-    ].join('\n');
-    fs.writeFileSync(agentsMdPath, content, 'utf8');
-  }
-  return agentsMdPath;
-}
-
 function resolveGitHooksDir(resolvedTarget) {
   const dotGitPath = path.join(resolvedTarget, '.git');
   if (!fs.existsSync(dotGitPath)) {
@@ -350,7 +137,8 @@ function writeGitPreCommitHook(resolvedTarget, hookDirRef) {
  * @param {string} [options.targetDir=process.cwd()]
  * @param {string} [options.cwd]
  * @param {'link'|'copy'} [options.mode='link']
- * @param {string} [options.target='agy']
+ * @param {'agy'} [options.target='agy']
+ * @param {boolean} [options.gitHook=false] Install the optional Git verification hook.
  * @param {string} [options.pluginSourceDir]
  */
 export function runInit({
@@ -358,13 +146,16 @@ export function runInit({
   cwd,
   mode = 'link',
   target = 'agy',
+  gitHook = false,
   pluginSourceDir,
 } = {}) {
   if (mode !== 'link' && mode !== 'copy') {
     throw new Error(`Invalid init mode "${mode}". Expected "link" or "copy".`);
   }
 
-  const targets = parseTargets(target);
+  if (target !== 'agy') {
+    throw new Error(`Invalid init target "${target}". Only Antigravity (agy) is supported.`);
+  }
   const resolvedTarget = path.resolve(targetDir || cwd || process.cwd());
   fs.mkdirSync(resolvedTarget, { recursive: true });
 
@@ -397,44 +188,13 @@ export function runInit({
     }
   }
 
-  if (targets.has('agy')) {
-    if (mode === 'link') {
-      upsertPluginsJson(pluginsJsonPath, pluginsParentDir);
-    } else {
-      upsertPluginsJson(pluginsJsonPath, '.agents/plugins');
-    }
-  }
+  upsertPluginsJson(pluginsJsonPath, mode === 'link' ? pluginsParentDir : '.agents/plugins');
 
   const effectivePluginRef =
     mode === 'copy' ? '.agents/plugins/agy-software-factory' : pluginDir;
 
-  const sourceSkillsBase =
-    mode === 'copy' ? destPluginDir : pluginDir;
-
   const targetConfigs = {};
-  if (targets.has('claude')) {
-    Object.assign(
-      targetConfigs,
-      writeClaudeConfig(resolvedTarget, effectivePluginRef, sourceSkillsBase, mode)
-    );
-  }
-  if (targets.has('gemini')) {
-    Object.assign(
-      targetConfigs,
-      writeGeminiConfig(resolvedTarget, effectivePluginRef, sourceSkillsBase, mode)
-    );
-  }
-  if (targets.has('codex')) {
-    targetConfigs.agentsMdPath = ensureCodexAgentsMd(
-      resolvedTarget,
-      sourceSkillsBase,
-      effectivePluginRef
-    );
-    targetConfigs.codexSkillsDir = installAgentSkills(
-      path.join(resolvedTarget, '.agents', 'skills'),
-      path.join(sourceSkillsBase, 'skills'),
-      mode
-    );
+  if (gitHook) {
     targetConfigs.gitPreCommitPath = writeGitPreCommitHook(resolvedTarget, effectivePluginRef);
   }
 
@@ -456,8 +216,8 @@ export function runInit({
   return {
     targetDir: resolvedTarget,
     mode,
-    targets: [...targets],
-    pluginsJsonPath: targets.has('agy') ? pluginsJsonPath : null,
+    targets: ['agy'],
+    pluginsJsonPath,
     factoryConfigPath,
     ...targetConfigs,
   };

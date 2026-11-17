@@ -3,7 +3,7 @@
 [![Software Factory CI](https://github.com/theRealMarkCastillo/agy-software-factory/actions/workflows/ci.yml/badge.svg)](https://github.com/theRealMarkCastillo/agy-software-factory/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Antigravity Software Factory** is a zero-dependency, portable **Antigravity plugin + deterministic Node.js CLI** supporting **Antigravity**, **Claude Code**, **Gemini CLI**, and **OpenAI Codex** that turns multi-agent software development into a repeatable, auditable pipeline.
+**Antigravity Software Factory** is an **Antigravity template repository** with a zero-dependency, portable **Antigravity plugin + deterministic Node.js CLI** for **Antigravity** that turns multi-agent software development into a repeatable, auditable pipeline.
 
 It pairs **probabilistic agent skills** (specification planning, isolated parallel swarm/worktree authoring, browser/E2E testing, and semantic code review) with **deterministic runtime gates** (stack detection, test/build verification with cryptographic workspace receipts, `file:line` diff security scanning, and `PreToolUse` / `Stop` lifecycle hooks).
 
@@ -60,7 +60,7 @@ flowchart LR
 │       │   ├── land.js                      # Automated worktree slice auditor & lander
 │       │   ├── twin.js                      # Digital Twin Universe (DTU) HTTP mock & webhook server
 │       │   ├── formatters.js                # GitHub Markdown & SARIF v2.1.0 formatters
-│       │   └── init.js                      # Multi-agent installer (agy, claude, gemini, codex, all)
+│       │   └── init.js                      # Antigravity plugin installer
 │       ├── rules/
 │       │   └── AGENTS.md                    # Portable always-on Software Factory rules
 │       └── skills/
@@ -238,17 +238,18 @@ Control endpoints exposed by every Digital Twin server (`createTwinServer`):
 
 ### `agy-factory init`
 
-Installs and configures `agy-software-factory` into another repository across Antigravity, Claude Code, Gemini CLI, and Codex / Git hooks.
+Installs and configures `agy-software-factory` into another repository across Antigravity / Git hooks.
 
 ```bash
-node bin/agy-factory.js init [targetDir] [--mode link|copy] [--target agy|claude|gemini|codex|all] [--json]
+node bin/agy-factory.js init [targetDir] [--mode link|copy] [--target agy] [--git-hook] [--json]
 ```
 
 | Flag | Description |
 | :--- | :--- |
 | `targetDir` | Destination repository path (positional, defaults to `process.cwd()`). |
 | `--mode <link\|copy>` | `link` (default) points `<targetDir>/.agents/plugins.json` at this repo's `plugins/` folder; `copy` vendors a standalone copy into `<targetDir>/.agents/plugins/agy-software-factory`. |
-| `--target <targets>` | Agent harness target(s): `agy` (default), `claude` (`.claude/settings.json` + `CLAUDE.md`), `gemini` (`.gemini/settings.json`), `codex` (`.git/hooks/pre-commit`), or `all`. |
+| `--target agy` | Optional compatibility flag; only Antigravity is supported. |
+| `--git-hook` | Opt into the non-destructive Git pre-commit verification installer. |
 | `--json` | Print installation paths as JSON. |
 
 `init` also creates `<targetDir>/.factory.json` (`{ "enforceStopVerify": false, "requireTests": true }`) if missing and ensures `.factory/` is listed in `<targetDir>/.gitignore`.
@@ -347,22 +348,6 @@ cp -R plugins/agy-software-factory ~/.gemini/config/plugins/agy-software-factory
 ```
 
 Once copied or registered via `.agents/plugins.json`, Antigravity discovers `agy-software-factory` automatically and activates its rules, lifecycle hooks, and `factory-*` skills on the next turn.
-
----
-
-## Cross-Agent Portability (`--target agy|claude|gemini|codex|all`)
-
-In addition to native Antigravity plugin installation, `agy-factory init` can wire the Software Factory's rules and lifecycle hooks into **Claude Code**, **Gemini CLI**, and **OpenAI Codex / Git**:
-
-```bash
-# Configure Antigravity + Claude Code + Gemini CLI + Git pre-commit hook in one command:
-node bin/agy-factory.js init /path/to/your-repo --mode copy --target all
-```
-
-- **Antigravity (`--target agy`)**: Writes `.agents/plugins.json` and `.factory.json`.
-- **Claude Code (`--target claude`)**: Non-destructively merges `PreToolUse` & `Stop` hooks into `.claude/settings.json`, installs native skills into `.claude/skills/`, and scaffolds `CLAUDE.md`.
-- **Gemini CLI (`--target gemini`)**: Non-destructively merges `BeforeTool` & `AfterAgent` hooks into `.gemini/settings.json`, installs native skills into `.gemini/skills/`, and scaffolds `GEMINI.md`.
-- **Codex / Git (`--target codex`)**: Installs `.git/hooks/pre-commit` (`chmod 0755`, supporting standard repos, `git worktree`, and submodules), installs native skills into `.agents/skills/`, and scaffolds root `AGENTS.md` if missing.
 
 ---
 

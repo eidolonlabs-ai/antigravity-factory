@@ -681,34 +681,21 @@ export function evaluatePreToolUse(payload, { env = process.env } = {}) {
       return { decision: "allow" };
     }
 
-    // Support Antigravity (toolCall.name / toolCall.args), Claude Code (tool_name / tool_input), and Gemini CLI
+    // Antigravity provides toolCall.name and toolCall.args.
     const toolCall =
       payload.toolCall && typeof payload.toolCall === "object"
         ? payload.toolCall
         : null;
     const toolName = String(
-      toolCall?.name ?? payload.tool_name ?? payload.toolName ?? ""
+      toolCall?.name ?? ""
     );
     const args =
       (toolCall?.args && typeof toolCall.args === "object"
         ? toolCall.args
         : null) ||
-      (payload.tool_input && typeof payload.tool_input === "object"
-        ? payload.tool_input
-        : null) ||
       {};
 
-    const isFileWriteTool =
-      toolName === "write_file" ||
-      toolName === "edit_file" ||
-      toolName === "Write" ||
-      toolName === "Edit" ||
-      toolName === "MultiEdit" ||
-      toolName === "replace" ||
-      toolName === "write" ||
-      toolName === "edit" ||
-      toolName === "create_file" ||
-      toolName === "insert_edit_into_file";
+    const isFileWriteTool = toolName === "write_file" || toolName === "edit_file";
 
     if (isFileWriteTool) {
       const candidatePaths = [];
@@ -764,13 +751,7 @@ export function evaluatePreToolUse(payload, { env = process.env } = {}) {
       return { decision: "allow" };
     }
 
-    const isCommandTool =
-      toolName === "run_command" ||
-      toolName === "Bash" ||
-      toolName === "bash" ||
-      toolName === "run_shell_command" ||
-      toolName === "shell" ||
-      toolName === "execute_command";
+    const isCommandTool = toolName === "run_command";
 
     if (isCommandTool) {
       const commandLine =
@@ -790,44 +771,8 @@ export function evaluatePreToolUse(payload, { env = process.env } = {}) {
   }
 }
 
-export function formatPreToolUseWireOutput(result, payload) {
-  const safeResult =
-    result && typeof result === "object" ? result : { decision: "allow" };
-  if (!payload || typeof payload !== "object") {
-    return safeResult;
-  }
-
-  if (payload.hook_event_name === "BeforeTool") {
-    if (safeResult.decision === "force_ask") {
-      return safeResult.reason
-        ? { decision: "ask", reason: safeResult.reason }
-        : { decision: "ask" };
-    }
-    return safeResult;
-  }
-
-  const isClaudeCode =
-    payload.hook_event_name === "PreToolUse" ||
-    (payload.tool_input !== undefined && !payload.toolCall);
-
-  if (isClaudeCode) {
-    const permissionDecision =
-      safeResult.decision === "deny"
-        ? "deny"
-        : safeResult.decision === "force_ask"
-          ? "ask"
-          : "allow";
-    const hookSpecificOutput = {
-      hookEventName: "PreToolUse",
-      permissionDecision,
-    };
-    if (safeResult.reason) {
-      hookSpecificOutput.permissionDecisionReason = safeResult.reason;
-    }
-    return { hookSpecificOutput };
-  }
-
-  return safeResult;
+export function formatPreToolUseWireOutput(result) {
+  return result && typeof result === "object" ? result : { decision: "allow" };
 }
 
 async function readStdin() {

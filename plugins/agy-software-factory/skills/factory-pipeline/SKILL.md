@@ -2,7 +2,7 @@
 name: factory-pipeline
 description: >-
   Orchestrates the 4-stage Software Factory workflow end-to-end across
-  Antigravity, Claude Code, Gemini CLI, and Codex: spec & slice planning,
+  Antigravity: spec & slice planning,
   isolated parallel swarm or git worktree execution, deterministic QA + live
   browser/E2E verification, and diff security review. Use this skill when
   building features, full-stack apps, services, or multi-file refactors from
@@ -53,12 +53,7 @@ When Stage 1 yields multiple independent slices, execute them in isolated git wo
        brief: "You own ONLY: <Owned Files>. Do NOT touch: <Forbidden Files>. Shared contracts: <Contracts>. Implement <Spec>, verify with `<Verification Command>`, and run `$FACTORY_CLI audit-diff --cwd . --allow-paths \"<Owned Files>\"` to prove slice boundary compliance. Report files changed and command output to @coordinator."
      }
      ```
-   - **In Claude Code, Gemini CLI, or Codex (`git worktree` + `FACTORY_SLICE`)**: Create a dedicated worktree per slice and run the builder with `FACTORY_SLICE=<slice-name>` so `pre-tool-guard.js` blocks out-of-slice edits automatically:
-     ```bash
-     git worktree add -b slice/<slice-name> ../wt-<slice-name>
-     FACTORY_SLICE=<slice-name> # run slice implementation & verification inside ../wt-<slice-name>
-     ```
-2. **Spawn an independent verifier**: Add a read-only `verifier` worker (`workspace: "inherit"` in Antigravity, or a read-only review task in Claude Code / Gemini CLI / Codex) tasked with executing Stage 3 and Stage 4 once slices land, or run Stages 3–4 directly after integrating all slices.
+2. **Spawn an independent verifier**: Add a read-only `verifier` worker (`workspace: "inherit"` in Antigravity) tasked with executing Stage 3 and Stage 4 once slices land, or run Stages 3–4 directly after integrating all slices.
 3. **Wait & integrate cleanly**: In Antigravity, sleep via `swarm_wait` (never poll). As each builder reports green slice checks, audit and land its worktree using `$FACTORY_CLI land --worktree <worktree> --slice <slice-name>` (or `--allow-paths "<Owned Files>"`), verify zero cross-slice file overlap, and clean up the worker (`swarm{action: "kill", name: "<slice-name>"}` or `git worktree remove ../wt-<slice-name>`).
 
 ---
@@ -76,7 +71,7 @@ Follow [factory-qa-verifier](../factory-qa-verifier/SKILL.md) on the integrated 
    - Inspect every check (`hygiene`, `docker-compose`, `lint`, `typecheck`, `test`, `build`).
    - **Never treat `NOT_RUN` as `PASS`**. If runnable unit/integration tests are missing (`NOT_RUN`), author or wire tests before proceeding.
 3. **Live UI verification (web apps)**:
-   - Start the local dev server or Docker Compose stack (`docker compose up --build -d`), confirm health endpoints respond, and exercise end-to-end user flows (create, update, filter, delete, error states) and verify zero console/network errors using the `browser` subagent (Antigravity) or automated Playwright / headless browser E2E checks (Claude Code, Gemini CLI, Codex).
+   - Start the local dev server or Docker Compose stack (`docker compose up --build -d`), confirm health endpoints respond, and exercise end-to-end user flows (create, update, filter, delete, error states) and verify zero console/network errors using the `browser` subagent (Antigravity).
 
 ---
 

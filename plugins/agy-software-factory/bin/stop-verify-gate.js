@@ -320,7 +320,7 @@ export function evaluateStop(payload, { env = process.env } = {}) {
       return { decision: "allow" };
     }
 
-    if (payload.fullyIdle === false || payload.stop_hook_active === true) {
+    if (payload.fullyIdle === false) {
       return { decision: "allow" };
     }
 
@@ -355,7 +355,7 @@ export function evaluateStop(payload, { env = process.env } = {}) {
     }
 
     const sessionKey =
-      payload.conversationId || payload.session_id || payload.sessionId || "default";
+      payload.conversationId || "default";
     const promptKey = `${sessionKey}:${gitState.stateHash}`;
     if (hasAlreadyPromptedAndRecord(cwd, promptKey)) {
       return { decision: "allow" };
@@ -370,33 +370,8 @@ export function evaluateStop(payload, { env = process.env } = {}) {
   }
 }
 
-export function formatStopWireOutput(result, payload) {
-  const safeResult =
-    result && typeof result === "object" ? result : { decision: "allow" };
-  if (!payload || typeof payload !== "object") {
-    return safeResult;
-  }
-
-  if (payload.hook_event_name === "AfterAgent") {
-    if (safeResult.decision === "continue") {
-      return { decision: "block", reason: safeResult.reason };
-    }
-    return { decision: "allow" };
-  }
-
-  const isClaudeCode =
-    payload.hook_event_name === "Stop" ||
-    (payload.stop_hook_active !== undefined &&
-      payload.terminationReason === undefined);
-
-  if (isClaudeCode) {
-    if (safeResult.decision === "continue") {
-      return { decision: "block", reason: safeResult.reason };
-    }
-    return {};
-  }
-
-  return safeResult;
+export function formatStopWireOutput(result) {
+  return result && typeof result === "object" ? result : { decision: "allow" };
 }
 
 async function readStdin() {

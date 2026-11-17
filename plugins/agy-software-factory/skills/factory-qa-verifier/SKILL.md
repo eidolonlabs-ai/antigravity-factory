@@ -44,7 +44,7 @@ Review every check reported by `agy-factory verify` (`hygiene`, `docker-compose`
 Whenever the repository or diff includes a web frontend (`web/`, React/Vite/Next, HTML/CSS, or Nginx proxy):
 
 1. **Boot the stack**: Start the application locally (e.g., `docker compose up --build -d` or component dev servers) and verify backend/frontend readiness (`curl -fsS http://localhost:<port>/health`).
-2. **Exercise live E2E user flows**: Invoke the `browser` subagent (in Antigravity) or run Playwright / headless browser E2E checks (in Claude Code, Gemini CLI, or Codex) against the live URL to test:
+2. **Exercise live E2E user flows**: Invoke the `browser` subagent (in Antigravity) against the live URL to test:
    - Initial render and data loading state.
    - Core mutations (creating, toggling/updating, filtering, and deleting items).
    - Persistence across page reload (when backed by an API/DB).
