@@ -22,4 +22,3 @@ This repository develops and ships **Antigravity Harness** (plugin ID `antigravi
   npm test
   node bin/agy-factory.js audit-diff
   ```
-  When pushing to `origin/main`, verify the live GitHub Actions run and runner annotations (`gh run watch --exit-status` and `gh run view`).

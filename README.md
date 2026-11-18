@@ -1,6 +1,5 @@
 # Antigravity Harness
 
-[![Antigravity Harness CI](https://github.com/theRealMarkCastillo/antigravity-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/theRealMarkCastillo/antigravity-harness/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **Antigravity Harness** is a specialized multi-agent development harness for solo developers working on a single machine, paired with a portable, zero-dependency Node.js CLI. Rather than building an external ticket-intake or queue-scheduling plant, it uses Antigravity's native agents, multi-agent swarm delegation, browser operation, and lifecycle controls—adding **Prompt, Context, and Harness Engineering** primitives for deterministic hooks, specialized skills, and isolated worktree workflows.
@@ -322,7 +321,7 @@ Clone the repository to try the harness, or copy it into a new repository to sta
    ```bash
    rm -rf examples/task-tracker
    ```
-3. **Start building**: Open the repository in Antigravity—`.agents/plugins.json` automatically activates the `antigravity-harness` plugin, rules, lifecycle hooks, and `factory-*` skills, and `.github/workflows/ci.yml` runs deterministic verification and diff security audits on every push and pull request.
+3. **Start building**: Open the repository in Antigravity—`.agents/plugins.json` automatically activates the `antigravity-harness` plugin, rules, lifecycle hooks, and `factory-*` skills for local verification and diff security audits.
 
 ---
 
