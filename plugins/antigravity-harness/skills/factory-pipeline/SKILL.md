@@ -18,8 +18,8 @@ Run software delivery as a disciplined **4-stage Software Factory** combining pr
 Resolve the `agy-factory` binary once at the start of the pipeline using the first path that exists:
 
 1. **Workspace binary / npm link**: `npx --no-install agy-factory` or `node ./bin/agy-factory.js`
-2. **Copied workspace plugin**: `node ./.agents/plugins/agy-software-factory/bin/agy-factory.js`
-3. **Bundled relative to this skill**: `node <plugin-dir>/bin/agy-factory.js` (i.e. [agy-factory.js](../../bin/agy-factory.js), two directories up from `skills/factory-pipeline/`—works from `~/.gemini/config/plugins/agy-software-factory/bin/agy-factory.js` or any linked plugin path)
+2. **Copied workspace plugin**: `node ./.agents/plugins/antigravity-harness/bin/agy-factory.js`
+3. **Bundled relative to this skill**: `node <plugin-dir>/bin/agy-factory.js` (i.e. [agy-factory.js](../../bin/agy-factory.js), two directories up from `skills/factory-pipeline/`—works from `~/.gemini/config/plugins/antigravity-harness/bin/agy-factory.js` or any linked plugin path)
 
 Set `FACTORY_CLI` in commands below to whichever path resolved.
 

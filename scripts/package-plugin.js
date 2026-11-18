@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const source = path.join(root, "plugins/agy-software-factory");
+const source = path.join(root, "plugins/antigravity-harness");
 const manifest = JSON.parse(fs.readFileSync(path.join(source, "plugin.json")));
 if (!/^\d+\.\d+\.\d+$/.test(manifest.version))
   throw new Error("Release requires a semantic version");
@@ -22,7 +22,7 @@ const out = path.resolve(
 );
 fs.mkdirSync(out, { recursive: true });
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "factory-package-")),
-  bundle = path.join(temp, "agy-software-factory");
+  bundle = path.join(temp, "antigravity-harness");
 fs.mkdirSync(bundle);
 const files = {};
 function copy(src, dest) {
@@ -58,13 +58,13 @@ try {
     copy(path.join(source, name), path.join(bundle, name));
   const archive = path.join(
     out,
-    `agy-software-factory-${manifest.version}.tgz`,
+    `antigravity-harness-${manifest.version}.tgz`,
   );
-  execFileSync("tar", ["-czf", archive, "-C", temp, "agy-software-factory"], {
+  execFileSync("tar", ["-czf", archive, "-C", temp, "antigravity-harness"], {
     stdio: "pipe",
   });
   fs.writeFileSync(
-    path.join(out, `agy-software-factory-${manifest.version}.sha256.json`),
+    path.join(out, `antigravity-harness-${manifest.version}.sha256.json`),
     JSON.stringify(
       {
         schemaVersion: 1,

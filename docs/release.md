@@ -1,14 +1,14 @@
 # Plugin distribution and release
 
-The canonical source is `plugins/agy-software-factory/`. Keep its supported manifest fields, skills, rules, hook scripts and Node libraries self-contained. Root scripts/tests/example apps are development infrastructure, not plugin runtime dependencies.
+The canonical source is `plugins/antigravity-harness/`. Keep its supported manifest fields, skills, rules, hook scripts and Node libraries self-contained. Root scripts/tests/example apps are development infrastructure, not plugin runtime dependencies.
 
 ## Repository installation
 
 ```sh
 git clone https://github.com/theRealMarkCastillo/antigravity-harness.git
 cd antigravity-harness
-agy plugin validate ./plugins/agy-software-factory --strict
-agy plugin install ./plugins/agy-software-factory
+agy plugin validate ./plugins/antigravity-harness --strict
+agy plugin install ./plugins/antigravity-harness
 agy plugin list
 ```
 
@@ -21,7 +21,7 @@ npm test
 node bin/agy-factory.js verify --require-tests
 node bin/agy-factory.js audit-diff
 npm run package:plugin
-node scripts/smoke-plugin.js dist/agy-software-factory-1.1.0.tgz --native
+node scripts/smoke-plugin.js dist/antigravity-harness-1.1.0.tgz --native
 ```
 
 The build emits a versioned tar archive and a SHA-256 inventory under `dist/`. The smoke test extracts into a temporary path with spaces, makes the bundle read-only, initializes a disposable project, and runs the packaged CLI and hooks. `--native` additionally requires strict Antigravity validation; missing `agy` fails this qualification. Portable CI without `agy` does not claim native qualification. Checksums permit comparison, not publisher authentication. Only inspect/extract trusted release archives.
@@ -30,7 +30,7 @@ The release-candidate workflow builds and uploads CI artifacts with read-only re
 
 ## Marketplace preparation
 
-Official documentation supports local/GitHub installation and Marketplace partner submission. The bundle includes a README, MIT license, logo, version, author, suggested prompts and search keywords. The display name is Software Factory; the stable ID remains agy-software-factory. Node-invoked bin entrypoints do not rely on executable bits; directly executed future helpers belong under scripts/.
+Official documentation supports local/GitHub installation and Marketplace partner submission. The bundle includes a README, MIT license, logo, version, author, suggested prompts and search keywords. The display name is Antigravity Harness; the ID is `antigravity-harness`. Node-invoked bin entrypoints do not rely on executable bits; directly executed future helpers belong under scripts/.
 
 Before submission: qualify an actual install, discovery, and hook lifecycle in a disposable authenticated Antigravity environment; inspect the logo in light/dark themes; document tested versions; run the real full-stack example; review the final bundle; then submit through the intake linked from the official build guide. Loader validation does not guarantee admission.
 

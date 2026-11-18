@@ -6,15 +6,15 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { detectProject } from '../plugins/agy-software-factory/lib/detect.js';
-import { runVerify, computeWorkspaceDigest } from '../plugins/agy-software-factory/lib/verify.js';
-import { runAuditDiff, matchesAllowedPath } from '../plugins/agy-software-factory/lib/audit-diff.js';
-import { runInit } from '../plugins/agy-software-factory/lib/init.js';
+import { detectProject } from '../plugins/antigravity-harness/lib/detect.js';
+import { runVerify, computeWorkspaceDigest } from '../plugins/antigravity-harness/lib/verify.js';
+import { runAuditDiff, matchesAllowedPath } from '../plugins/antigravity-harness/lib/audit-diff.js';
+import { runInit } from '../plugins/antigravity-harness/lib/init.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const CLI_BIN = path.join(REPO_ROOT, 'bin', 'agy-factory.js');
-const PLUGIN_SOURCE_DIR = path.join(REPO_ROOT, 'plugins', 'agy-software-factory');
+const PLUGIN_SOURCE_DIR = path.join(REPO_ROOT, 'plugins', 'antigravity-harness');
 
 function createTempDir(t) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'factory-test-'));
@@ -258,7 +258,7 @@ test('runInit in link mode creates .agents/plugins.json, .factory.json, and upda
   assert.ok(gitignoreContent.includes('.factory'), 'Expected .gitignore to ignore .factory/');
 });
 
-test('runInit in copy mode copies plugin.json into .agents/plugins/agy-software-factory/', async (t) => {
+test('runInit in copy mode copies plugin.json into .agents/plugins/antigravity-harness/', async (t) => {
   const tempDir = createTempDir(t);
 
   const result = await runInit({
@@ -273,13 +273,13 @@ test('runInit in copy mode copies plugin.json into .agents/plugins/agy-software-
     tempDir,
     '.agents',
     'plugins',
-    'agy-software-factory',
+    'antigravity-harness',
     'plugin.json'
   );
   assert.equal(fs.existsSync(copiedPluginJsonPath), true);
 
   const manifest = JSON.parse(fs.readFileSync(copiedPluginJsonPath, 'utf8'));
-  assert.equal(manifest.name, 'agy-software-factory');
+  assert.equal(manifest.name, 'antigravity-harness');
 });
 
 test('CLI subprocess: node bin/agy-factory.js detect --cwd <tempDir> --json outputs valid JSON', (t) => {
@@ -335,7 +335,7 @@ test('runInit in copy mode works inside a CommonJS repo (copied CLI + hook execu
     tempDir,
     '.agents',
     'plugins',
-    'agy-software-factory'
+    'antigravity-harness'
   );
   const copiedPkgPath = path.join(copiedPluginDir, 'package.json');
   assert.equal(fs.existsSync(copiedPkgPath), true, 'Expected copied plugin package.json to exist');

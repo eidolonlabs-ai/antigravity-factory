@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadFactoryPolicy } from "../plugins/agy-software-factory/lib/policy.js";
-import { detectProject } from "../plugins/agy-software-factory/lib/detect.js";
+import { loadFactoryPolicy } from "../plugins/antigravity-harness/lib/policy.js";
+import { detectProject } from "../plugins/antigravity-harness/lib/detect.js";
 import { fileURLToPath } from "node:url";
 test("reference project exposes required checks and an explicit live browser command", () => {
   const cwd = fileURLToPath(

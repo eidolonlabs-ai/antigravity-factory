@@ -16,7 +16,7 @@ function resolvePluginSource(pluginSourceDir) {
   }
 
   const resolved = path.resolve(pluginSourceDir);
-  const nestedCandidate = path.join(resolved, "agy-software-factory");
+  const nestedCandidate = path.join(resolved, "antigravity-harness");
   if (
     fs.existsSync(nestedCandidate) &&
     fs.statSync(nestedCandidate).isDirectory()
@@ -142,7 +142,7 @@ function writeGitPreCommitHook(resolvedTarget, hookDirRef) {
 }
 
 /**
- * Installs or links the `agy-software-factory` plugin into `targetDir`.
+ * Installs or links the `antigravity-harness` plugin into `targetDir`.
  *
  * @param {object} [options]
  * @param {string} [options.targetDir=process.cwd()]
@@ -180,7 +180,7 @@ export function runInit({
   for (const rel of [
     ".agents",
     ".agents/plugins",
-    ".agents/plugins/agy-software-factory",
+    ".agents/plugins/antigravity-harness",
     ".agents/plugins.json",
     ".factory",
     ".factory.json",
@@ -198,7 +198,7 @@ export function runInit({
     resolvedTarget,
     ".agents",
     "plugins",
-    "agy-software-factory",
+    "antigravity-harness",
   );
 
   // Validate existing registration before copying or changing any managed files.
@@ -250,7 +250,7 @@ export function runInit({
     );
 
     const effectivePluginRef =
-      mode === "copy" ? ".agents/plugins/agy-software-factory" : pluginDir;
+      mode === "copy" ? ".agents/plugins/antigravity-harness" : pluginDir;
 
     const targetConfigs = {};
     if (gitHook) {

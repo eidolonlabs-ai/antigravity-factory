@@ -9,8 +9,8 @@ Requires Node.js 20+ and Git for worktree operations. No plugin runtime dependen
 From a clone of the source repository, validate then install with the native CLI:
 
 ```sh
-agy plugin validate ./plugins/agy-software-factory --strict
-agy plugin install ./plugins/agy-software-factory
+agy plugin validate ./plugins/antigravity-harness --strict
+agy plugin install ./plugins/antigravity-harness
 agy plugin list
 ```
 

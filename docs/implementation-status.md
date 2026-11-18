@@ -37,7 +37,7 @@ node bin/agy-factory.js verify --require-tests
 node bin/agy-factory.js audit-diff
 node bin/agy-factory.js verify --cwd examples/task-tracker --require-tests
 npm run package:plugin
-node scripts/smoke-plugin.js dist/agy-software-factory-1.1.0.tgz --native
+node scripts/smoke-plugin.js dist/antigravity-harness-1.1.0.tgz --native
 ```
 
 The example requires Docker, its installed API/web dependencies and Playwright Chromium; see the [example setup](../examples/task-tracker/README.md). Native bundle qualification requires `agy`. The [release guide](release.md) explains installation and the remaining distribution checks.

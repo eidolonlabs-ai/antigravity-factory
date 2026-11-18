@@ -1,6 +1,6 @@
 # Antigravity Harness contributor rules
 
-This repository develops and ships **Antigravity Harness** (plugin ID `agy-software-factory`), a portable plugin, deterministic Node.js CLI, and multi-agent workflow suite for **Antigravity**. Follow both the five Software Factory rules and the repository contributor constraints below on every change.
+This repository develops and ships **Antigravity Harness** (plugin ID `antigravity-harness`), a portable plugin, deterministic Node.js CLI, and multi-agent workflow suite for **Antigravity**. Follow both the five Software Factory rules and the repository contributor constraints below on every change.
 
 ## Software Factory Rules
 
@@ -12,11 +12,11 @@ This repository develops and ships **Antigravity Harness** (plugin ID `agy-softw
 
 ## Repository Contributor Constraints
 
-- **Zero External Runtime Dependencies in the Factory Plugin**: Everything inside `plugins/agy-software-factory/` (`bin/` and `lib/`) and `bin/agy-factory.js` must use **only** Node.js 20+ built-in ESM modules (`node:fs`, `node:path`, `node:crypto`, `node:child_process`, `node:http`, `node:util`, `node:os`, `node:url`). Do not add third-party npm packages inside `plugins/agy-software-factory/`. *(Note: If you created a new application repository from this GitHub template, you are free to add application dependencies to your app directories or root `package.json` as needed.)*
-- **Self-Contained Plugin Bundle**: `plugins/agy-software-factory/` must operate cleanly when linked or copied into another repository (`agy-factory init --mode link|copy`) or installed under `~/.gemini/config/plugins/agy-software-factory`. Lifecycle hooks in `plugins/agy-software-factory/bin/` must remain self-contained and fail safe.
+- **Zero External Runtime Dependencies in the Factory Plugin**: Everything inside `plugins/antigravity-harness/` (`bin/` and `lib/`) and `bin/agy-factory.js` must use **only** Node.js 20+ built-in ESM modules (`node:fs`, `node:path`, `node:crypto`, `node:child_process`, `node:http`, `node:util`, `node:os`, `node:url`). Do not add third-party npm packages inside `plugins/antigravity-harness/`. *(Note: If you created a new application repository from this GitHub template, you are free to add application dependencies to your app directories or root `package.json` as needed.)*
+- **Self-Contained Plugin Bundle**: `plugins/antigravity-harness/` must operate cleanly when linked or copied into another repository (`agy-factory init --mode link|copy`) or installed under `~/.gemini/config/plugins/antigravity-harness`. Lifecycle hooks in `plugins/antigravity-harness/bin/` must remain self-contained and fail safe.
 - **Antigravity & Non-Destructive `init`**: Preserve native hook payloads and decisions, existing plugin registrations and optional pre-commit hooks, and `.git` file (`gitdir:` / `commondir`) resolution for worktrees/submodules. Keep instructions focused on Antigravity.
 - **Portable Minimal-`PATH` Test Isolation**: Tests that construct a restricted `PATH` (e.g., to hide optional tools like `docker`) must never assume `npm` or `git` resides in `path.dirname(process.execPath)`. Resolve companion binaries across `[path.dirname(process.execPath), ...PATH]` (with `process.env.npm_execpath` wrapper fallback) and fail loudly if absent.
-- **Antigravity Spec Compliance**: Keep `plugins/agy-software-factory/plugin.json` restricted to documented manifest keys, keep `plugins/agy-software-factory/rules/AGENTS.md` plain Markdown with no YAML frontmatter, and include `name` and `description` frontmatter on every `SKILL.md`.
+- **Antigravity Spec Compliance**: Keep `plugins/antigravity-harness/plugin.json` restricted to documented manifest keys, keep `plugins/antigravity-harness/rules/AGENTS.md` plain Markdown with no YAML frontmatter, and include `name` and `description` frontmatter on every `SKILL.md`.
 - **Pre-Completion Gate**: Before finishing any change to this repository, run:
   ```bash
   npm test

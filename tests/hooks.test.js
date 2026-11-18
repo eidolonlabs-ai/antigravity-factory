@@ -6,26 +6,26 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { evaluatePreToolUse } from '../plugins/agy-software-factory/bin/pre-tool-guard.js';
+import { evaluatePreToolUse } from '../plugins/antigravity-harness/bin/pre-tool-guard.js';
 import {
   evaluateStop,
   inspectGitStateFallback,
-} from '../plugins/agy-software-factory/bin/stop-verify-gate.js';
-import { runVerify, computeWorkspaceDigest } from '../plugins/agy-software-factory/lib/verify.js';
+} from '../plugins/antigravity-harness/bin/stop-verify-gate.js';
+import { runVerify, computeWorkspaceDigest } from '../plugins/antigravity-harness/lib/verify.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const PRE_TOOL_BIN = path.join(
   REPO_ROOT,
   'plugins',
-  'agy-software-factory',
+  'antigravity-harness',
   'bin',
   'pre-tool-guard.js'
 );
 const STOP_GATE_BIN = path.join(
   REPO_ROOT,
   'plugins',
-  'agy-software-factory',
+  'antigravity-harness',
   'bin',
   'stop-verify-gate.js'
 );

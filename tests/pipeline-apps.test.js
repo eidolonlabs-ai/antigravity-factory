@@ -5,20 +5,20 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 
-import { detectProject } from '../plugins/agy-software-factory/lib/detect.js';
-import { runVerify } from '../plugins/agy-software-factory/lib/verify.js';
-import { runAuditDiff } from '../plugins/agy-software-factory/lib/audit-diff.js';
-import { runInit } from '../plugins/agy-software-factory/lib/init.js';
-import { runPlan, validateFactorySpec } from '../plugins/agy-software-factory/lib/spec.js';
-import { runLand } from '../plugins/agy-software-factory/lib/land.js';
+import { detectProject } from '../plugins/antigravity-harness/lib/detect.js';
+import { runVerify } from '../plugins/antigravity-harness/lib/verify.js';
+import { runAuditDiff } from '../plugins/antigravity-harness/lib/audit-diff.js';
+import { runInit } from '../plugins/antigravity-harness/lib/init.js';
+import { runPlan, validateFactorySpec } from '../plugins/antigravity-harness/lib/spec.js';
+import { runLand } from '../plugins/antigravity-harness/lib/land.js';
 import {
   createTwinServer,
   signWebhookPayload,
   verifyWebhookSignature,
-} from '../plugins/agy-software-factory/lib/twin.js';
-import { runCli } from '../plugins/agy-software-factory/bin/agy-factory.js';
-import { evaluatePreToolUse } from '../plugins/agy-software-factory/bin/pre-tool-guard.js';
-import { evaluateStop } from '../plugins/agy-software-factory/bin/stop-verify-gate.js';
+} from '../plugins/antigravity-harness/lib/twin.js';
+import { runCli } from '../plugins/antigravity-harness/bin/agy-factory.js';
+import { evaluatePreToolUse } from '../plugins/antigravity-harness/bin/pre-tool-guard.js';
+import { evaluateStop } from '../plugins/antigravity-harness/bin/stop-verify-gate.js';
 
 function withTempDir(prefix, fn) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));

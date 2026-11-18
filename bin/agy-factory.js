@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runCli } from '../plugins/agy-software-factory/bin/agy-factory.js';
+import { runCli } from '../plugins/antigravity-harness/bin/agy-factory.js';
 
 export { runCli };
 

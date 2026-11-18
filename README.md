@@ -45,7 +45,7 @@ flowchart LR
 ├── bin/
 │   └── agy-factory.js                       # Root CLI entrypoint -> plugin CLI
 ├── plugins/
-│   └── agy-software-factory/                # Portable, self-contained Antigravity plugin
+│   └── antigravity-harness/                # Portable, self-contained Antigravity plugin
 │       ├── plugin.json                      # Plugin manifest (skills, rules, hooks bundle)
 │       ├── hooks.json                       # PreToolUse & Stop lifecycle hook wiring
 │       ├── bin/
@@ -91,7 +91,7 @@ Use one agent for small tasks and native Antigravity delegation only for indepen
 - [Policy, evidence, status and recovery contract](docs/verification-contract.md)
 - [Tested host compatibility and qualification limits](docs/compatibility.md)
 
-From this clone, run `agy plugin validate ./plugins/agy-software-factory --strict` then `agy plugin install ./plugins/agy-software-factory` to install natively. This changes your Antigravity profile. Project-local `init --mode link|copy` is an alternative registration/setup route. Avoid duplicate registration. Build a standalone archive with `npm run package:plugin`.
+From this clone, run `agy plugin validate ./plugins/antigravity-harness --strict` then `agy plugin install ./plugins/antigravity-harness` to install natively. This changes your Antigravity profile. Project-local `init --mode link|copy` is an alternative registration/setup route. Avoid duplicate registration. Build a standalone archive with `npm run package:plugin`.
 
 ## Quickstart
 
@@ -127,7 +127,7 @@ node bin/agy-factory.js audit-diff --cwd examples/task-tracker --all
 
 ## CLI Reference (`agy-factory`)
 
-Invoke via `node bin/agy-factory.js <command>`, `npx agy-factory <command>`, or directly from the portable plugin at `node plugins/agy-software-factory/bin/agy-factory.js <command>`.
+Invoke via `node bin/agy-factory.js <command>`, `npx agy-factory <command>`, or directly from the portable plugin at `node plugins/antigravity-harness/bin/agy-factory.js <command>`.
 
 ### `agy-factory detect`
 
@@ -255,7 +255,7 @@ Control endpoints exposed by every Digital Twin server (`createTwinServer`):
 
 ### `agy-factory init`
 
-Installs and configures `agy-software-factory` into another repository across Antigravity / Git hooks.
+Installs and configures `antigravity-harness` into another repository across Antigravity / Git hooks.
 
 ```bash
 node bin/agy-factory.js init [targetDir] [--mode link|copy] [--target agy] [--git-hook] [--json]
@@ -264,7 +264,7 @@ node bin/agy-factory.js init [targetDir] [--mode link|copy] [--target agy] [--gi
 | Flag | Description |
 | :--- | :--- |
 | `targetDir` | Destination repository path (positional, defaults to `process.cwd()`). |
-| `--mode <link\|copy>` | `link` (default) points `<targetDir>/.agents/plugins.json` at this repo's `plugins/` folder; `copy` vendors a standalone copy into `<targetDir>/.agents/plugins/agy-software-factory`. |
+| `--mode <link\|copy>` | `link` (default) points `<targetDir>/.agents/plugins.json` at this repo's `plugins/` folder; `copy` vendors a standalone copy into `<targetDir>/.agents/plugins/antigravity-harness`. |
 | `--target agy` | Optional compatibility flag; only Antigravity is supported. |
 | `--git-hook` | Opt into the non-destructive Git pre-commit verification installer. |
 | `--json` | Print installation paths as JSON. |
@@ -276,11 +276,11 @@ node bin/agy-factory.js init [targetDir] [--mode link|copy] [--target agy] [--gi
 
 ## Antigravity Lifecycle Hooks
 
-When the `agy-software-factory` plugin is enabled, [hooks.json](plugins/agy-software-factory/hooks.json) registers two self-contained lifecycle hooks:
+When the `antigravity-harness` plugin is enabled, [hooks.json](plugins/antigravity-harness/hooks.json) registers two self-contained lifecycle hooks:
 
 ### 1. `PreToolUse` Guardrail (`factory-pre-tool-guard`)
 
-Runs [pre-tool-guard.js](plugins/agy-software-factory/bin/pre-tool-guard.js) before `write_file`, `edit_file`, and `run_command`:
+Runs [pre-tool-guard.js](plugins/antigravity-harness/bin/pre-tool-guard.js) before `write_file`, `edit_file`, and `run_command`:
 - **Secret & Git File Protection (`deny`)**: Blocks agent writes/edits to `.env` and `.env.*` (while explicitly allowing `.env.example`, `.env.sample`, `.env.template`, and `.env.test`), SSH/PEM private keys (`id_rsa`, `id_ed25519`, `*.pem`, `*.key`), and `.git/config` or `.git/HEAD`.
 - **Receipt & Holdout Test Integrity (`deny`)**: Blocks direct `write_file` / `edit_file` calls targeting `.factory/**` (guarding supported tool writes to verification records; this is not a process sandbox) and protected holdout suites (`holdout/**` or `*.holdout.test.*` / `*.holdout.spec.*`).
 - **Catastrophic Shell Protection (`deny`)**: Blocks destructive system commands such as `rm -rf /`, `rm -rf ~`, `mkfs.*`, and fork bombs.
@@ -289,7 +289,7 @@ Runs [pre-tool-guard.js](plugins/agy-software-factory/bin/pre-tool-guard.js) bef
 
 ### 2. Bounded Opt-In `Stop` Verification Reminder (`factory-stop-verify-gate`)
 
-Runs [stop-verify-gate.js](plugins/agy-software-factory/bin/stop-verify-gate.js) when the agent goes idle (`terminationReason: "NO_TOOL_CALL"` and `fullyIdle: true`):
+Runs [stop-verify-gate.js](plugins/antigravity-harness/bin/stop-verify-gate.js) when the agent goes idle (`terminationReason: "NO_TOOL_CALL"` and `fullyIdle: true`):
 - **Opt-In Activation**: Off by default so exploratory chats are never interrupted. Enable per-repository by setting `"enforceStopVerify": true` in `.factory.json`, or per-session via environment variable `FACTORY_ENFORCE_STOP=1`.
 - **Freshness Check**: Versioned status binds HEAD, staged index, working source bytes/modes, symlink target text, and policy. Both normal `model_stop` and legacy `NO_TOOL_CALL` payloads are supported. Passing checks do not stand in for required review/browser evidence.
 - **Bounded Loop Protection**: `stop.maxContinuations` is 0–3 (default 1). Edits do not reset the conversation budget. Exhaustion allows the host to end while conversation-specific status remains `EXHAUSTED`; this is not successful completion. Host hook errors can fail open.
@@ -318,13 +318,13 @@ Clone the repository to try the harness, or copy it into a new repository to sta
    ```bash
    rm -rf examples/task-tracker
    ```
-3. **Start building**: Open the repository in Antigravity—`.agents/plugins.json` automatically activates the `agy-software-factory` plugin, rules, lifecycle hooks, and `factory-*` skills, and `.github/workflows/ci.yml` runs deterministic verification and diff security audits on every push and pull request.
+3. **Start building**: Open the repository in Antigravity—`.agents/plugins.json` automatically activates the `antigravity-harness` plugin, rules, lifecycle hooks, and `factory-*` skills, and `.github/workflows/ci.yml` runs deterministic verification and diff security audits on every push and pull request.
 
 ---
 
 ## Installing & Reusing Across Existing Repositories
 
-You can also attach `agy-software-factory` to any existing project using whichever workflow fits your team:
+You can also attach `antigravity-harness` to any existing project using whichever workflow fits your team:
 
 ### Option A: Link into Another Repo (Local Development)
 
@@ -336,7 +336,7 @@ node bin/agy-factory.js init /path/to/your-repo --mode link
 
 ### Option B: Copy Self-Contained Plugin into a Repo (Team / VCS)
 
-Vendors `plugins/agy-software-factory/` directly into `<target-repo>/.agents/plugins/agy-software-factory` with zero external path dependencies, ready to commit to git:
+Vendors `plugins/antigravity-harness/` directly into `<target-repo>/.agents/plugins/antigravity-harness` with zero external path dependencies, ready to commit to git:
 
 ```bash
 node bin/agy-factory.js init /path/to/your-repo --mode copy
@@ -344,7 +344,7 @@ node bin/agy-factory.js init /path/to/your-repo --mode copy
 
 ### Option C: Manual `.agents/plugins.json` Declaration
 
-Add an entry pointing to the parent directory containing `agy-software-factory/` in your project's `.agents/plugins.json`:
+Add an entry pointing to the parent directory containing `antigravity-harness/` in your project's `.agents/plugins.json`:
 
 ```json
 {
@@ -362,10 +362,10 @@ Install once for every workspace on your machine by copying the plugin bundle in
 
 ```bash
 mkdir -p ~/.gemini/config/plugins
-cp -R plugins/agy-software-factory ~/.gemini/config/plugins/agy-software-factory
+cp -R plugins/antigravity-harness ~/.gemini/config/plugins/antigravity-harness
 ```
 
-Once copied or registered via `.agents/plugins.json`, Antigravity discovers `agy-software-factory` automatically and activates its rules, lifecycle hooks, and `factory-*` skills on the next turn.
+Once copied or registered via `.agents/plugins.json`, Antigravity discovers `antigravity-harness` automatically and activates its rules, lifecycle hooks, and `factory-*` skills on the next turn.
 
 ---
 

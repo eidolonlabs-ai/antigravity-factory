@@ -13,9 +13,9 @@ jobs:
           node-version: '22'
       - run: npm test
       - run: npm run package:plugin
-      - run: node scripts/smoke-plugin.js dist/agy-software-factory-1.1.0.tgz
+      - run: node scripts/smoke-plugin.js dist/antigravity-harness-1.1.0.tgz
       - uses: actions/upload-artifact@v4
         with:
-          name: software-factory-release-candidate
+          name: antigravity-harness-release-candidate
           path: dist/
 # This builds an artifact only. Native qualification and publication are separate.

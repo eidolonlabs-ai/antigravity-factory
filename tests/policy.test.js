@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import {
   runVerify,
   computeWorkspaceDigest,
-} from "../plugins/agy-software-factory/lib/verify.js";
+} from "../plugins/antigravity-harness/lib/verify.js";
 function project(t, policy = {}) {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "factory-policy-"));
   t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
