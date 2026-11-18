@@ -1,4 +1,4 @@
-name: Software Factory CI
+name: Antigravity Harness CI
 
 on:
   push:

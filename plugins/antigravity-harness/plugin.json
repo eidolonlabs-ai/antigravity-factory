@@ -8,14 +8,14 @@
   "homepage": "https://github.com/theRealMarkCastillo/antigravity-harness",
   "repository": "https://github.com/theRealMarkCastillo/antigravity-harness",
   "suggestedPrompts": [
-    "Build a new feature end-to-end using the Software Factory pipeline",
+    "Build a new feature end-to-end using the Antigravity Harness pipeline",
     "Run deterministic QA verification across all workspace components",
     "Audit the current git diff for security issues and regressions"
   ],
   "$schema": "https://antigravity.google/schemas/v1/plugin.json",
   "license": "MIT",
   "keywords": [
-    "software-factory",
+    "antigravity-harness",
     "verification",
     "local-development"
   ]

@@ -29,7 +29,7 @@ const SARIF_RULES = {
 export function formatVerifyMarkdown(receipt) {
   const badge = receipt.ok ? 'PASS' : 'FAIL';
   const lines = [
-    `## Software Factory Verification: ${badge}`,
+    `## Antigravity Harness Verification: ${badge}`,
     '',
     `- **Workspace**: \`${receipt.cwd}\``,
     `- **Digest**: \`${receipt.digest.slice(0, 16)}...\``,
@@ -55,7 +55,7 @@ export function formatVerifyMarkdown(receipt) {
 
 export function formatAuditMarkdown(report) {
   const lines = [
-    `## Software Factory Diff & Security Audit: ${report.status}`,
+    `## Antigravity Harness Diff & Security Audit: ${report.status}`,
     '',
     `- **Workspace**: \`${report.cwd}\``,
     `- **Files Scanned**: **${report.filesScanned}**`,

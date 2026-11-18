@@ -18,7 +18,7 @@ import {
   formatAuditSarif,
 } from "../lib/formatters.js";
 
-const HELP_TEXT = `Antigravity Software Factory CLI (agy-factory)
+const HELP_TEXT = `Antigravity Harness CLI (agy-factory)
 
 Usage:
   agy-factory <command> [options]
@@ -32,7 +32,7 @@ Commands:
   audit-diff             Scan git diff / untracked files for secrets, sinks, and slice boundaries
   land                   Verify and land an isolated git worktree slice into the workspace
   twin                   Start a zero-dependency Digital Twin Universe (DTU) mock HTTP server
-  init [targetDir]       Configure Software Factory for Antigravity
+  init [targetDir]       Configure Antigravity Harness for Antigravity
 
 Options:
   --conversation <id>    Select a stop session in status (otherwise workspace status)
@@ -177,7 +177,7 @@ function formatAuditHuman(report) {
 
 function formatInitHuman(res) {
   const lines = [
-    `Initialized Software Factory (${res.mode} mode, targets: ${(res.targets || ["agy"]).join(", ")})`,
+    `Initialized Antigravity Harness (${res.mode} mode, targets: ${(res.targets || ["agy"]).join(", ")})`,
     `  Target Directory : ${res.targetDir}`,
     `  Factory Config   : ${res.factoryConfigPath}`,
   ];
@@ -260,7 +260,7 @@ function maybeAppendGithubSummary(markdownText, enabled) {
 }
 
 /**
- * Executes the Software Factory CLI with the provided arguments.
+ * Executes the Antigravity Harness CLI with the provided arguments.
  *
  * @param {string[]} [argv=process.argv.slice(2)]
  * @param {{ stdout?: NodeJS.WritableStream, stderr?: NodeJS.WritableStream }} [io]

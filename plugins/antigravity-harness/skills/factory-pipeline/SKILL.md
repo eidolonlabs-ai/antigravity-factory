@@ -1,7 +1,7 @@
 ---
 name: factory-pipeline
 description: >-
-  Orchestrates the 4-stage Software Factory workflow end-to-end across
+  Orchestrates the 4-stage Antigravity Harness workflow end-to-end across
   Antigravity: spec & slice planning,
   isolated parallel swarm or git worktree execution, deterministic QA + live
   browser/E2E verification, and diff security review. Use this skill when
@@ -11,7 +11,7 @@ description: >-
 
 # Factory Pipeline Orchestrator
 
-Run software delivery as a disciplined **4-stage Software Factory** combining probabilistic multi-agent execution with deterministic CLI gates. Never collapse planning, parallel authoring, verification, and security review into an unverified single-pass edit.
+Run software delivery as a disciplined **4-stage Antigravity Harness workflow** combining probabilistic multi-agent execution with deterministic CLI gates. Never collapse planning, parallel authoring, verification, and security review into an unverified single-pass edit.
 
 ## Locating the `agy-factory` CLI
 

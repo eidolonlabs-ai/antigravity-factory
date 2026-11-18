@@ -1,6 +1,6 @@
-# Software Factory Rules
+# Antigravity Harness Rules
 
-Operate this workspace as a **multi-agent Software Factory** (for Antigravity). Apply these five rules to every feature, bugfix, or refactor:
+Operate this workspace with the **Antigravity Harness** multi-agent workflow. Apply these five rules to every feature, bugfix, or refactor:
 
 1. **Plan Before Building**: Never jump straight into multi-file edits on non-trivial tasks. Inventory the repository first (`agy-factory detect`), lock shared contracts and acceptance criteria, and produce a specification with explicit disjoint file ownership before writing code (using `factory-spec-planner`, `.factory/spec.json` via `agy-factory plan --init`, or interactive planning such as `/plan` / `/grill-me`).
 2. **Isolate Parallel Work**: When executing slices in parallel, give each builder an isolated git worktree (via Antigravity `/teamwork` `workspace: "share"` / `"branch"`, or `git worktree add` with `FACTORY_SLICE=<slice>`) and strictly disjoint owned files. Never assign two concurrent builders to edit the same file, enforce slice ownership mechanically with `agy-factory audit-diff --slice <slice>` (or `--allow-paths "<slice-globs>"`), and land verified slices with `agy-factory land --worktree <dir> --slice <slice>`.

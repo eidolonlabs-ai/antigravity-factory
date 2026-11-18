@@ -893,7 +893,7 @@ test('E2E Pipeline App 7: Antigravity installation and Markdown/SARIF output', (
         customIo
       );
       assert.equal(mdExit, 0);
-      assert.ok(stdoutBuf.includes('## Software Factory Verification: PASS'));
+      assert.ok(stdoutBuf.includes('## Antigravity Harness Verification: PASS'));
       assert.ok(fs.readFileSync(summaryFile, 'utf8').includes('| **PASS** | `workspace` | `hygiene` |'));
     } finally {
       if (prevSummaryEnv === undefined) {

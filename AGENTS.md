@@ -1,8 +1,8 @@
 # Antigravity Harness contributor rules
 
-This repository develops and ships **Antigravity Harness** (plugin ID `antigravity-harness`), a portable plugin, deterministic Node.js CLI, and multi-agent workflow suite for **Antigravity**. Follow both the five Software Factory rules and the repository contributor constraints below on every change.
+This repository develops and ships **Antigravity Harness** (plugin ID `antigravity-harness`), a portable plugin, deterministic Node.js CLI, and multi-agent workflow suite for **Antigravity**. Follow both the five Antigravity Harness rules and the repository contributor constraints below on every change.
 
-## Software Factory Rules
+## Antigravity Harness Rules
 
 1. **Plan Before Building**: Never jump straight into multi-file edits for non-trivial tasks. Inventory the repository (`node bin/agy-factory.js detect`) and produce a clear spec with acceptance criteria, shared contracts, and explicit disjoint file ownership first (via `factory-spec-planner`, `.factory/spec.json` with `node bin/agy-factory.js plan`, or `/plan` / `/grill-me`).
 2. **Isolate Parallel Work**: When multiple builders work in parallel, assign each worker disjoint files or modules in an isolated git worktree (via Antigravity `/teamwork` with `workspace: "share"` / `"branch"`, or `git worktree add` + `FACTORY_SLICE=<slice>`). Verify slice boundaries with `node bin/agy-factory.js audit-diff --slice <slice>` (or `--allow-paths "<slice-globs>"`) and land changes via `node bin/agy-factory.js land --worktree <dir> --slice <slice>`. Never assign two builders to the same file.

@@ -1,6 +1,6 @@
 # Antigravity Harness
 
-[![Software Factory CI](https://github.com/theRealMarkCastillo/antigravity-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/theRealMarkCastillo/antigravity-harness/actions/workflows/ci.yml)
+[![Antigravity Harness CI](https://github.com/theRealMarkCastillo/antigravity-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/theRealMarkCastillo/antigravity-harness/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **Antigravity Harness** is a local development harness for solo developers, with a portable, zero-dependency Node.js CLI. It uses Antigravity's native agents, delegation, browser operation and lifecycle controls, adding repeatable workflows, scope guardrails and verification evidence. Its structured interfaces can later serve a larger team factory.
@@ -62,7 +62,7 @@ flowchart LR
 │       │   ├── formatters.js                # GitHub Markdown & SARIF v2.1.0 formatters
 │       │   └── init.js                      # Antigravity plugin installer
 │       ├── rules/
-│       │   └── AGENTS.md                    # Portable always-on Software Factory rules
+│       │   └── AGENTS.md                    # Portable always-on Antigravity Harness rules
 │       └── skills/
 │           ├── factory-pipeline/SKILL.md
 │           ├── factory-spec-planner/SKILL.md
@@ -301,7 +301,7 @@ Runs [stop-verify-gate.js](plugins/antigravity-harness/bin/stop-verify-gate.js) 
 
 | Component | Path | Purpose |
 | :--- | :--- | :--- |
-| **Portable Rules** | `rules/AGENTS.md` | Always-on 5 Software Factory rules (Plan, Isolate, Verify, Audit, Preserve Docs). |
+| **Portable Rules** | `rules/AGENTS.md` | Always-on 5 Antigravity Harness rules (Plan, Isolate, Verify, Audit, Preserve Docs). |
 | **`factory-pipeline`** | `skills/factory-pipeline/SKILL.md` | End-to-end 4-stage orchestrator across planning, parallel swarm, QA, and security review. |
 | **`factory-spec-planner`** | `skills/factory-spec-planner/SKILL.md` | Runs `detect`, locks shared API/DB contracts, and emits a disjoint Slice Ownership Table. |
 | **`factory-qa-verifier`** | `skills/factory-qa-verifier/SKILL.md` | Runs `verify --require-tests`, checks `PASS`/`FAIL`/`NOT_RUN` & receipt, and runs `browser` E2E QA. |
