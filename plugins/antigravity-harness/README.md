@@ -1,6 +1,6 @@
 # Antigravity Harness plugin
 
-A local plugin harness for solo developers. Antigravity supplies agents, delegation, browser operation and permissions. This bundle supplies delivery skills, tool guardrails, deterministic verification, evidence records and safe worktree integration. A larger factory can later call the same CLI.
+A specialized local harness for solo developers on a single machine. Antigravity supplies native agents, multi-agent swarm delegation, browser operation, and permissions; this plugin adds **Context Engineering** (`rules/AGENTS.md`, slice contracts) and **Harness Engineering** (deterministic `PreToolUse` / `Stop` lifecycle hooks, verification oracles with freshness receipts, holdout test guardrails, `file:line` diff auditing, and conflict-aware `git worktree` integration) alongside multi-stage agent skills.
 
 Requires Node.js 20+ and Git for worktree operations. No plugin runtime dependencies or API keys are required. Application verification may require the application's own dependencies, Docker or browser tooling.
 

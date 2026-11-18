@@ -2,7 +2,7 @@
   "name": "antigravity-harness",
   "displayName": "Antigravity Harness",
   "version": "1.1.0",
-  "description": "Local development harness for Antigravity with project verification, scope guardrails, review evidence, and safe worktree integration.",
+  "description": "Specialized Antigravity harness for solo developers with deterministic PreToolUse/Stop lifecycle hooks, verification oracles, scope guardrails, skills, and multi-agent worktree integration.",
   "logo": "assets/logo.svg",
   "author": "Mark Castillo",
   "homepage": "https://github.com/theRealMarkCastillo/antigravity-harness",
@@ -16,6 +16,7 @@
   "license": "MIT",
   "keywords": [
     "antigravity-harness",
+    "harness-engineering",
     "verification",
     "local-development"
   ]

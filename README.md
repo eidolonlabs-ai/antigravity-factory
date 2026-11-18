@@ -3,25 +3,29 @@
 [![Antigravity Harness CI](https://github.com/theRealMarkCastillo/antigravity-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/theRealMarkCastillo/antigravity-harness/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Antigravity Harness** is a local development harness for solo developers, with a portable, zero-dependency Node.js CLI. It uses Antigravity's native agents, delegation, browser operation and lifecycle controls, adding repeatable workflows, scope guardrails and verification evidence. Its structured interfaces can later serve a larger team factory.
+**Antigravity Harness** is a specialized multi-agent development harness for solo developers working on a single machine, paired with a portable, zero-dependency Node.js CLI. Rather than building an external ticket-intake or queue-scheduling plant, it uses Antigravity's native agents, multi-agent swarm delegation, browser operation, and lifecycle controls—adding **Prompt, Context, and Harness Engineering** primitives for deterministic hooks, specialized skills, and isolated worktree workflows.
 
-It pairs **probabilistic agent skills** (specification planning, isolated parallel swarm/worktree authoring, browser/E2E testing, and semantic code review) with **deterministic runtime gates** (stack detection, test/build verification with SHA-256 freshness receipts, `file:line` diff security scanning, and `PreToolUse` / `Stop` lifecycle hooks).
+It pairs **probabilistic agent skills & context** (specification planning, disjoint slice contracts, isolated parallel swarm/worktree authoring, browser/E2E testing, and fresh-context semantic code review) with **deterministic runtime physics** (stack detection, test/build verification oracles with SHA-256 freshness receipts, holdout test guardrails, `file:line` diff security scanning, and `PreToolUse` / `Stop` lifecycle hooks).
 
 ---
 
-## Why Deterministic Gates + Probabilistic Skills?
+## Prompt, Context, and Harness Engineering
 
-Prompt-only workflows fail silently at scale: parallel workers step on the same files, missing test scripts get misreported as "green", security sinks slip into large diffs, and agents stop before running verification. Purely rigid scripts, on the other hand, cannot decompose product requirements, author full-stack slices, or reason about subtle semantic bugs.
+Relying purely on conversational prompts or skills leads to probabilistic drift, context rot, test-cheating, and human-in-the-loop (HIL) interruption fatigue. Purely rigid scripts, on the other hand, cannot decompose product requirements, author full-stack slices, or reason about subtle semantic bugs.
 
-The harness separates what LLMs do best from what deterministic code must enforce:
+**Antigravity Harness** structures solo-developer multi-agent workflows across three layers:
 
-| Concern | Probabilistic Layer (Skills & Rules) | Deterministic Layer (CLI & Lifecycle Hooks) |
+1. **Prompt Engineering (Probabilistic — Single Turn)**: Specialized skills (`factory-spec-planner`, `factory-pipeline`, `factory-qa-verifier`, `factory-security-reviewer`) and role-specific worker briefs that steer what each agent attempts.
+2. **Context Engineering (Probabilistic — Session State)**: Always-on workspace rules (`rules/AGENTS.md`), detected stack inventories (`detect`), and machine-checked slice ownership contracts (`.factory/spec.json`) so builders and fresh-context reviewers see high-signal boundaries.
+3. **Harness Engineering (Deterministic — Runtime Physics)**: `PreToolUse` guards (`pre-tool-guard.js`), bounded `Stop` verification circuit breakers (`stop-verify-gate.js`), binary pass/fail verification oracles (`verify`), holdout suite protection (`holdout/`), static diff scanners (`audit-diff`), and conflict-aware worktree integration (`land`).
+
+| Concern | Probabilistic Layer (Prompt & Context Engineering) | Deterministic Layer (Harness Engineering: CLI & Hooks) |
 | :--- | :--- | :--- |
 | **Architecture & Planning** | `factory-spec-planner` locks shared contracts, acceptance criteria, and disjoint file slices | `agy-factory detect` inventories real stacks, `docker-compose.yml`, and runnable scripts |
-| **Parallel Build** | `factory-pipeline` fans out isolated swarm workers (`workspace: "share"`) per slice | `PreToolUse` hook blocks writes to `.env`, private keys, `.git/`, and destructive commands |
-| **QA & Verification** | `factory-qa-verifier` drives live UI user flows via the `browser` subagent | `agy-factory verify` enforces `NOT_RUN !== PASS` and writes `.factory/verify-receipt.json` |
-| **Completion Gate** | Portable `rules/AGENTS.md` requires verification before declaring done | Opt-in `Stop` hook checks configured status with a bounded per-conversation reminder budget |
-| **Security & Review** | `factory-security-reviewer` conducts read-only semantic review of `git diff` | `agy-factory audit-diff` flags hardcoded secrets, SQL interpolation, `eval`, and XSS sinks |
+| **Parallel Worktree Build** | `factory-pipeline` fans out isolated swarm workers (`workspace: "share"`) per slice | `PreToolUse` hook blocks writes to `.env`, private keys, `.git/`, holdout tests, and out-of-slice files |
+| **QA & Verification Oracles** | `factory-qa-verifier` drives live UI user flows via the `browser` subagent | `agy-factory verify` enforces `NOT_RUN !== PASS` and writes `.factory/verify-receipt.json` |
+| **Completion & Loop Bounds** | Portable `rules/AGENTS.md` requires verification before declaring done | Opt-in `Stop` hook checks configured status with a bounded per-conversation circuit breaker |
+| **Fresh-Context Review** | `factory-security-reviewer` conducts read-only semantic review of `git diff` | `agy-factory audit-diff` flags hardcoded secrets, SQL interpolation, `eval`, and XSS sinks |
 
 ```mermaid
 flowchart LR
@@ -40,7 +44,7 @@ flowchart LR
 .
 ├── .agents/
 │   └── plugins.json                         # Workspace plugin discovery registration
-├── AGENTS.md                                # Contributor & factory rules for this repo
+├── AGENTS.md                                # Contributor & harness rules for this repo
 ├── package.json                             # Zero-dependency Node.js >=20 ESM manifest
 ├── bin/
 │   └── agy-factory.js                       # Root CLI entrypoint -> plugin CLI
@@ -95,9 +99,9 @@ From this clone, run `agy plugin validate ./plugins/antigravity-harness --strict
 
 ## Quickstart
 
-Requires **Node.js `>= 20.0.0`**. The factory CLI and plugin use zero external npm dependencies, so they run immediately without `npm install`. **Docker & Docker Compose are optional**—if `docker compose` is installed and a repository includes `docker-compose.yml`, `agy-factory verify` validates it automatically; if Docker is not installed (or no compose file exists), the check is recorded as `NOT_RUN` without blocking verification.
+Requires **Node.js `>= 20.0.0`**. The harness CLI and plugin use zero external npm dependencies, so they run immediately without `npm install`. **Docker & Docker Compose are optional**—if `docker compose` is installed and a repository includes `docker-compose.yml`, `agy-factory verify` validates it automatically; if Docker is not installed (or no compose file exists), the check is recorded as `NOT_RUN` without blocking verification.
 
-### 1. Run the Factory Test Suite & Self-Checks
+### 1. Run the Harness Test Suite & Self-Checks
 
 ```bash
 # Run all CLI and lifecycle hook unit tests (node:test)

@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   verify:
-    name: Factory Tests, Verification & Security Audit (Node ${{ matrix.node-version }})
+    name: Harness Tests, Verification & Security Audit (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -26,7 +26,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
-      - name: Run factory CLI & hook unit tests
+      - name: Run harness CLI & hook unit tests
         run: npm test
 
       - name: Run deterministic verification on root workspace

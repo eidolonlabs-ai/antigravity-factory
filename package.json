@@ -1,7 +1,7 @@
 {
   "name": "antigravity-harness",
   "version": "1.1.0",
-  "description": "Local Antigravity plugin harness with deterministic verification and portable factory interfaces",
+  "description": "Specialized Antigravity harness with deterministic lifecycle hooks, verification oracles, skills, and multi-agent worktree workflows for solo developers",
   "license": "MIT",
   "author": "Mark Castillo",
   "homepage": "https://github.com/theRealMarkCastillo/antigravity-harness",

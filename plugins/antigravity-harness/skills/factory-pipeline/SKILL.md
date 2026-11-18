@@ -9,7 +9,7 @@ description: >-
   start to finish.
 ---
 
-# Factory Pipeline Orchestrator
+# Harness Pipeline Orchestrator
 
 Run software delivery as a disciplined **4-stage Antigravity Harness workflow** combining probabilistic multi-agent execution with deterministic CLI gates. Never collapse planning, parallel authoring, verification, and security review into an unverified single-pass edit.
 
@@ -90,6 +90,6 @@ Follow [factory-security-reviewer](../factory-security-reviewer/SKILL.md) as a *
 
 ## Completion and native ownership
 
-Use Antigravity's native delegation, browser and permission mechanisms; do not implement a second agent runner. Before landing, run factory verification in each worker and retain a fresh receipt. Landing checks conflicts and verifies the integrated state; it does not commit or push. Review the combined diff after integration.
+Use Antigravity's native delegation, browser and permission mechanisms; do not implement a second agent runner. Before landing, run harness verification in each worker and retain a fresh receipt. Landing checks conflicts and verifies the integrated state; it does not commit or push. Review the combined diff after integration.
 
 Finish with `$FACTORY_CLI status --cwd . --json`. Report configured mechanical status separately from independent review and live UI coverage. For a session exhausted by stop reminders, report the unfinished requirements; never describe termination as success. Missing or stale required evidence needs actual reinspection, not an invented record.
