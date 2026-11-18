@@ -86,7 +86,7 @@ export function formatAuditSarif(report) {
         tool: {
           driver: {
             name: 'agy-factory',
-            informationUri: 'https://github.com/theRealMarkCastillo/antigravity-harness',
+            informationUri: 'https://github.com/eidolonlabs-ai/antigravity-factory',
             version: '1.0.0',
             rules: Object.values(SARIF_RULES),
           },

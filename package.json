@@ -4,10 +4,10 @@
   "description": "Specialized Antigravity harness with deterministic lifecycle hooks, verification oracles, skills, and multi-agent worktree workflows for solo developers",
   "license": "MIT",
   "author": "Mark Castillo",
-  "homepage": "https://github.com/theRealMarkCastillo/antigravity-harness",
+  "homepage": "https://github.com/eidolonlabs-ai/antigravity-factory",
   "repository": {
     "type": "git",
-    "url": "https://github.com/theRealMarkCastillo/antigravity-harness.git"
+    "url": "https://github.com/eidolonlabs-ai/antigravity-factory.git"
   },
   "type": "module",
   "bin": {

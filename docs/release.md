@@ -5,8 +5,8 @@ The canonical source is `plugins/antigravity-harness/`. Keep its supported manif
 ## Repository installation
 
 ```sh
-git clone https://github.com/theRealMarkCastillo/antigravity-harness.git
-cd antigravity-harness
+git clone https://github.com/eidolonlabs-ai/antigravity-factory.git
+cd antigravity-factory
 agy plugin validate ./plugins/antigravity-harness --strict
 agy plugin install ./plugins/antigravity-harness
 agy plugin list

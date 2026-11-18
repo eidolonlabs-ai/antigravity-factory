@@ -5,8 +5,8 @@
   "description": "Specialized Antigravity harness for solo developers with deterministic PreToolUse/Stop lifecycle hooks, verification oracles, scope guardrails, skills, and multi-agent worktree integration.",
   "logo": "assets/logo.svg",
   "author": "Mark Castillo",
-  "homepage": "https://github.com/theRealMarkCastillo/antigravity-harness",
-  "repository": "https://github.com/theRealMarkCastillo/antigravity-harness",
+  "homepage": "https://github.com/eidolonlabs-ai/antigravity-factory",
+  "repository": "https://github.com/eidolonlabs-ai/antigravity-factory",
   "suggestedPrompts": [
     "Build a new feature end-to-end using the Antigravity Harness pipeline",
     "Run deterministic QA verification across all workspace components",
