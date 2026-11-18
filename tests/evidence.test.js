@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { runCli } from "../plugins/antigravity-harness/bin/agy-factory.js";
-import { runVerify } from "../plugins/antigravity-harness/lib/verify.js";
+import { runCli } from "../plugins/antigravity-factory/bin/agy-factory.js";
+import { runVerify } from "../plugins/antigravity-factory/lib/verify.js";
 function cli(cwd, args) {
   let text = "";
   let error = "";

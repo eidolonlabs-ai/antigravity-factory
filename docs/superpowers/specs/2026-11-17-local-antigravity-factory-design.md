@@ -1,4 +1,4 @@
-# Local Antigravity Harness Design
+# Local Antigravity Factory Design
 
 Status: proposed design accompanying the requested implementation plan. No runtime changes or publication are authorized by this document alone.
 
@@ -11,7 +11,7 @@ The user approved this direction in conversation and requested a plan plus repos
 ## Scope and constraints
 
 - Node.js 20+ built-in ESM modules only inside the factory plugin and root CLI; no external runtime dependencies.
-- One canonical bundle: `plugins/antigravity-harness/`. It must work outside this repository and from a read-only installation directory.
+- One canonical bundle: `plugins/antigravity-factory/`. It must work outside this repository and from a read-only installation directory.
 - Antigravity only. Preserve native hook payloads and decisions, existing plugin registrations, optional Git hooks, and worktree/submodule resolution.
 - Preserve existing comments and documentation unless directly invalidated.
 - No Jira intake, persistent job scheduler, remote execution fleet, automatic PR merging, DORA telemetry, cross-platform adapters, or new MCP server in this release.
@@ -54,7 +54,7 @@ Stage file operations with rollback data. Rollback covers only the lander's own 
 
 ## Packaging and installation
 
-Keep stable ID `antigravity-harness`; proposed display name is `Antigravity Harness` to follow Marketplace branding guidance. Add plugin-local README, license, compatibility notes, supported manifest metadata, and release notes. Retain Node-invoked `bin/` entrypoints: they do not need executable permission. Put any new directly executed helpers under `scripts/`, per official packaging guidance.
+Keep stable ID `antigravity-factory`; proposed display name is `Antigravity Factory` to follow Marketplace branding guidance. Add plugin-local README, license, compatibility notes, supported manifest metadata, and release notes. Retain Node-invoked `bin/` entrypoints: they do not need executable permission. Put any new directly executed helpers under `scripts/`, per official packaging guidance.
 
 Use native `agy plugin install <local-directory>` for host installation. Keep `agy-factory init --mode link|copy` for per-project registration/configuration. Document the difference and avoid double registration. Refuse to overwrite malformed registration JSON; refuse conflicting plugin-local edits during copy updates, remove only previously managed stale files, and keep a recoverable backup. No silent network installation or automatic upgrade.
 

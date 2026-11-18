@@ -5,20 +5,20 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 
-import { detectProject } from '../plugins/antigravity-harness/lib/detect.js';
-import { runVerify } from '../plugins/antigravity-harness/lib/verify.js';
-import { runAuditDiff } from '../plugins/antigravity-harness/lib/audit-diff.js';
-import { runInit } from '../plugins/antigravity-harness/lib/init.js';
-import { runPlan, validateFactorySpec } from '../plugins/antigravity-harness/lib/spec.js';
-import { runLand } from '../plugins/antigravity-harness/lib/land.js';
+import { detectProject } from '../plugins/antigravity-factory/lib/detect.js';
+import { runVerify } from '../plugins/antigravity-factory/lib/verify.js';
+import { runAuditDiff } from '../plugins/antigravity-factory/lib/audit-diff.js';
+import { runInit } from '../plugins/antigravity-factory/lib/init.js';
+import { runPlan, validateFactorySpec } from '../plugins/antigravity-factory/lib/spec.js';
+import { runLand } from '../plugins/antigravity-factory/lib/land.js';
 import {
   createTwinServer,
   signWebhookPayload,
   verifyWebhookSignature,
-} from '../plugins/antigravity-harness/lib/twin.js';
-import { runCli } from '../plugins/antigravity-harness/bin/agy-factory.js';
-import { evaluatePreToolUse } from '../plugins/antigravity-harness/bin/pre-tool-guard.js';
-import { evaluateStop } from '../plugins/antigravity-harness/bin/stop-verify-gate.js';
+} from '../plugins/antigravity-factory/lib/twin.js';
+import { runCli } from '../plugins/antigravity-factory/bin/agy-factory.js';
+import { evaluatePreToolUse } from '../plugins/antigravity-factory/bin/pre-tool-guard.js';
+import { evaluateStop } from '../plugins/antigravity-factory/bin/stop-verify-gate.js';
 
 function withTempDir(prefix, fn) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -893,7 +893,7 @@ test('E2E Pipeline App 7: Antigravity installation and Markdown/SARIF output', (
         customIo
       );
       assert.equal(mdExit, 0);
-      assert.ok(stdoutBuf.includes('## Antigravity Harness Verification: PASS'));
+      assert.ok(stdoutBuf.includes('## Antigravity Factory Verification: PASS'));
       assert.ok(fs.readFileSync(summaryFile, 'utf8').includes('| **PASS** | `workspace` | `hygiene` |'));
     } finally {
       if (prevSummaryEnv === undefined) {

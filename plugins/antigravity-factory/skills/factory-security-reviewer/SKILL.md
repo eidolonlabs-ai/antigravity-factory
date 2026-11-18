@@ -7,7 +7,7 @@ description: >-
   `git diff`. Use this skill as the final review gate before declaring work done.
 ---
 
-# Harness Security & Diff Reviewer
+# Factory Security & Diff Reviewer
 
 Perform a two-layer **deterministic + semantic** code and security audit over workspace changes.
 

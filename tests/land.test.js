@@ -4,8 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { runLand } from "../plugins/antigravity-harness/lib/land.js";
-import { runVerify } from "../plugins/antigravity-harness/lib/verify.js";
+import { runLand } from "../plugins/antigravity-factory/lib/land.js";
+import { runVerify } from "../plugins/antigravity-factory/lib/verify.js";
 function setup(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "land-safe-")),
     cwd = path.join(root, "main"),
@@ -119,7 +119,7 @@ test("edits during failing verification survive rollback with recovery details",
 });
 test("human landing output explains conflicts and recovery for preserved concurrent edits", async (t) => {
   const { runCli } =
-    await import("../plugins/antigravity-harness/bin/agy-factory.js");
+    await import("../plugins/antigravity-factory/bin/agy-factory.js");
   const { cwd, worker } = setup(t);
   runVerify({ cwd: worker });
   fs.writeFileSync(

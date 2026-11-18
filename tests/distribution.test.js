@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { runInit } from "../plugins/antigravity-harness/lib/init.js";
+import { runInit } from "../plugins/antigravity-factory/lib/init.js";
 function setup(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "factory install "));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -26,7 +26,7 @@ test("malformed registration is preserved instead of overwritten", (t) => {
 test("copy upgrade refuses modified managed files and preserves unrelated files", (t) => {
   const cwd = setup(t);
   runInit({ cwd, mode: "copy" });
-  const plugin = path.join(cwd, ".agents/plugins/antigravity-harness");
+  const plugin = path.join(cwd, ".agents/plugins/antigravity-factory");
   fs.writeFileSync(path.join(plugin, "personal.txt"), "keep");
   const manifest = path.join(plugin, "plugin.json");
   fs.appendFileSync(manifest, "\n ");
@@ -38,12 +38,12 @@ test("copy upgrade refuses modified managed files and preserves unrelated files"
 });
 test("copy upgrades remove only stale managed files", (t) => {
   const cwd = setup(t),
-    source = path.join(cwd, "source/antigravity-harness"),
+    source = path.join(cwd, "source/antigravity-factory"),
     target = path.join(cwd, "target");
   fs.mkdirSync(source, { recursive: true });
   fs.writeFileSync(
     path.join(source, "plugin.json"),
-    '{"name":"antigravity-harness"}',
+    '{"name":"antigravity-factory"}',
   );
   fs.writeFileSync(path.join(source, "old.txt"), "old");
   runInit({ cwd: target, mode: "copy", pluginSourceDir: source });
@@ -52,13 +52,13 @@ test("copy upgrades remove only stale managed files", (t) => {
   runInit({ cwd: target, mode: "copy", pluginSourceDir: source });
   assert.equal(
     fs.existsSync(
-      path.join(target, ".agents/plugins/antigravity-harness/old.txt"),
+      path.join(target, ".agents/plugins/antigravity-factory/old.txt"),
     ),
     false,
   );
   assert.equal(
     fs.readFileSync(
-      path.join(target, ".agents/plugins/antigravity-harness/new.txt"),
+      path.join(target, ".agents/plugins/antigravity-factory/new.txt"),
       "utf8",
     ),
     "new",
@@ -99,7 +99,7 @@ test("installer refuses symlink registration paths", (t) => {
 test("read-only unrelated directories survive successful copy upgrade cleanup", (t) => {
   const cwd = setup(t);
   runInit({ cwd, mode: "copy" });
-  const bundle = path.join(cwd, ".agents/plugins/antigravity-harness"),
+  const bundle = path.join(cwd, ".agents/plugins/antigravity-factory"),
     privateDir = path.join(bundle, "user-private");
   fs.mkdirSync(privateDir);
   fs.writeFileSync(path.join(privateDir, "note.txt"), "keep");

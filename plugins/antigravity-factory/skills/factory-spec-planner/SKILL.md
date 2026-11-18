@@ -7,7 +7,7 @@ description: >-
   edits or parallel swarm/worktree builds.
 ---
 
-# Harness Spec & Ownership Planner
+# Factory Spec & Ownership Planner
 
 Convert user requirements into a deterministic, conflict-free engineering specification **before** any builder edits application files.
 

@@ -1,6 +1,6 @@
 # Task Tracker Example
 
-A full-stack reference application built and verified with the **Antigravity Harness** workflow.
+A full-stack reference application built and verified with the **Antigravity Factory** workflow.
 
 ## Architecture
 
@@ -45,7 +45,7 @@ npm install
 npm test
 ```
 
-## Running the Antigravity Harness CLI
+## Running the Antigravity Factory CLI
 
 From `examples/task-tracker`, you can inspect, verify, and security-audit this project using the `agy-factory` CLI:
 

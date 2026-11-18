@@ -1,4 +1,4 @@
-# Local Antigravity Harness Implementation Plan
+# Local Antigravity Factory Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Use a dedicated read-only reviewer at the review gates.
 
@@ -8,11 +8,11 @@
 
 **Tech Stack:** Node.js 20+ ESM built-ins, node:test, Git, native Antigravity plugins; example-only PostgreSQL and Playwright.
 
-**Spec:** `docs/superpowers/specs/2026-11-17-local-antigravity-harness-design.md`
+**Spec:** `docs/superpowers/specs/2026-11-17-local-antigravity-factory-design.md`
 
 ## Execution record — 2026-11-17
 
-The implementation was completed sequentially in `codex/local-antigravity-harness`, with independent read-only milestone and final semantic/security reviews. The detailed checklists below preserve the original planned procedures; they are not a claim that every proposed test case or host qualification was executed verbatim. The table and [implementation status](../../implementation-status.md) record the delivered scope and observed checks.
+The implementation was completed sequentially in `codex/local-antigravity-factory`, with independent read-only milestone and final semantic/security reviews. The detailed checklists below preserve the original planned procedures; they are not a claim that every proposed test case or host qualification was executed verbatim. The table and [implementation status](../../implementation-status.md) record the delivered scope and observed checks.
 
 | Task | Delivered status |
 | --- | --- |
@@ -30,7 +30,7 @@ Implementation refinements include shared `workspace.js`, `records.js` and `inst
 ## Global Constraints
 
 - Node.js 20+ built-in ESM modules only inside the factory plugin and root CLI; no external runtime dependencies.
-- One canonical bundle: `plugins/antigravity-harness/`. It must work outside this repository and from a read-only installation directory.
+- One canonical bundle: `plugins/antigravity-factory/`. It must work outside this repository and from a read-only installation directory.
 - Antigravity only. Preserve native hook payloads and decisions, existing plugin registrations, optional Git hooks, and worktree/submodule resolution.
 - Preserve existing comments and documentation unless directly invalidated.
 - No implicit installation into the developer's live profile, publication, push, or Marketplace submission.
@@ -58,7 +58,7 @@ Execute sequentially with one implementation owner, followed by an independent r
 | Reference app | `examples/task-tracker/**`, `tests/reference-app.test.js` | Factory runtime and other tests | Real DB integration and browser suite |
 | Integration/docs | Existing CLI/tests when adaptation is needed, all four plugin skills, plugin rules, README, `docs/**`, `.github/workflows/ci.yml` | Unrelated application logic | All repository and host gates |
 
-Table paths `lib/` and `bin/` are relative to `plugins/antigravity-harness/`; test paths are repository-relative. Shared CLI/documentation updates are sequential coordinator work, never concurrent ownership.
+Table paths `lib/` and `bin/` are relative to `plugins/antigravity-factory/`; test paths are repository-relative. Shared CLI/documentation updates are sequential coordinator work, never concurrent ownership.
 
 ### Task 1: Qualify native host behavior and distribution discovery
 
@@ -74,7 +74,7 @@ Table paths `lib/` and `bin/` are relative to `plugins/antigravity-harness/`; te
 
 ### Task 2: Version policy and strengthen verification freshness
 
-**Files:** Create `plugins/antigravity-harness/lib/policy.js`, `tests/policy.test.js`; modify `lib/verify.js`, `lib/formatters.js` and related CLI tests.
+**Files:** Create `plugins/antigravity-factory/lib/policy.js`, `tests/policy.test.js`; modify `lib/verify.js`, `lib/formatters.js` and related CLI tests.
 
 **Interfaces:** `loadFactoryPolicy(cwd) -> {schemaVersion, verification, stop, policyDigest}`; `runVerify(options)` retains existing fields and adds version/identity/policy fields. Required selectors use normalized component paths, not display names. Existing legacy configuration normalizes to equivalent behavior.
 
@@ -124,11 +124,11 @@ Table paths `lib/` and `bin/` are relative to `plugins/antigravity-harness/`; te
 
 **Files:** Modify plugin `plugin.json`, `package.json`, `lib/init.js`, root `package.json`; create plugin `README.md`, `LICENSE`, `scripts/package-plugin.js`, `scripts/smoke-plugin.js`, `tests/distribution.test.js`, `.github/workflows/release.yml`.
 
-**Interfaces:** `npm run package:plugin` creates `dist/antigravity-harness-<version>.tgz` and SHA-256 inventory from an allowlisted canonical bundle. Build tooling may use installed archive utilities after explicit availability checks; plugin runtime remains built-ins only. Output artifact and root package versions must agree with the manifest.
+**Interfaces:** `npm run package:plugin` creates `dist/antigravity-factory-<version>.tgz` and SHA-256 inventory from an allowlisted canonical bundle. Build tooling may use installed archive utilities after explicit availability checks; plugin runtime remains built-ins only. Output artifact and root package versions must agree with the manifest.
 
 - [ ] Add tests for manifest fields/skill names, complete internal relative references, malformed registration preservation, repeat install idempotency, modified copy protection, removal of previously managed stale files, spaces in paths, and rollback on failed update.
 - [ ] Run `node --test tests/distribution.test.js` and confirm failing new requirements.
-- [ ] Add supported metadata, proposed display name `Antigravity Harness`, plugin-local prerequisites/usage/license, and clear distinction between native plugin installation and project initialization. Preserve the plugin ID and Node-invoked bin paths.
+- [ ] Add supported metadata, proposed display name `Antigravity Factory`, plugin-local prerequisites/usage/license, and clear distinction between native plugin installation and project initialization. Preserve the plugin ID and Node-invoked bin paths.
 - [ ] Implement a managed-file inventory for copy updates. On legacy installs without inventory, adopt only byte-identical source files; otherwise refuse replacement and provide a migration/backup path. Never silently replace malformed registries.
 - [ ] Implement archive construction and extraction smoke tests outside the repository. Make the installed bundle read-only and run CLI/hook entrypoints against a disposable writable project. No runtime files may resolve back to the checkout.
 - [ ] Validate the extracted artifact with native `agy plugin validate --strict --json`; fail release qualification if that tool is unavailable rather than report a pass. CI without host access may still run portable tests, but cannot claim native qualification.

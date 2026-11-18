@@ -6,6 +6,6 @@ Native hooks run from the plugin root and use JSON decisions, not nonzero exit c
 
 Live authenticated host activation/continuation, nested GitHub URL discovery and Marketplace admission remain unqualified. The installed CLI exposes no documented profile-isolation flag; qualification must use a disposable authenticated environment without changing the developer's active plugin installation.
 
-Supported repository route: clone the repository, then run `agy plugin install ./plugins/antigravity-harness` from that checkout. This is the documented local-directory route, not a claim that this nested repository installs directly by GitHub URL. Validate before installing. Native installation changes your Antigravity profile; project `init` is separate.
+Supported repository route: clone the repository, then run `agy plugin install ./plugins/antigravity-factory` from that checkout. This is the documented local-directory route, not a claim that this nested repository installs directly by GitHub URL. Validate before installing. Native installation changes your Antigravity profile; project `init` is separate.
 
 References: https://antigravity.google/docs/plugins/ ; https://antigravity.google/docs/build-plugins/ ; https://antigravity.google/docs/hooks/

@@ -8,7 +8,7 @@ description: >-
   completion.
 ---
 
-# Harness QA Verifier
+# Factory QA Verifier
 
 Prove that workspace changes build, pass real tests, satisfy secret/git hygiene, and work end-to-end in a live browser when a web UI is present.
 

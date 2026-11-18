@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { evaluateStop } from "../plugins/antigravity-harness/bin/stop-verify-gate.js";
-import { evaluateStatus } from "../plugins/antigravity-harness/lib/status.js";
-import { runVerify } from "../plugins/antigravity-harness/lib/verify.js";
+import { evaluateStop } from "../plugins/antigravity-factory/bin/stop-verify-gate.js";
+import { evaluateStatus } from "../plugins/antigravity-factory/lib/status.js";
+import { runVerify } from "../plugins/antigravity-factory/lib/verify.js";
 for (const name of ["stop-model-stop", "stop-legacy"])
   test(`${name}: bounded session budget survives edits and resets after success`, (t) => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "factory-stop-"));

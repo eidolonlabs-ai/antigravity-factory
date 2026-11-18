@@ -1,6 +1,6 @@
 # Antigravity-only template conversion
 
-The approved scope removes other harness installation and hook adapters while keeping the portable Antigravity plugin, CLI, multi-agent workflows, and optional Git verification installer.
+The approved scope removes other factory installation and hook adapters while keeping the portable Antigravity plugin, CLI, multi-agent workflows, and optional Git verification installer.
 
 ## Acceptance and contracts
 

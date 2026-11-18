@@ -1,6 +1,6 @@
-# Antigravity Harness plugin
+# Antigravity Factory plugin
 
-A specialized local harness for solo developers on a single machine. Antigravity supplies native agents, multi-agent swarm delegation, browser operation, and permissions; this plugin adds **Context Engineering** (`rules/AGENTS.md`, slice contracts) and **Harness Engineering** (deterministic `PreToolUse` / `Stop` lifecycle hooks, verification oracles with freshness receipts, holdout test guardrails, `file:line` diff auditing, and conflict-aware `git worktree` integration) alongside multi-stage agent skills.
+A specialized local factory for solo developers on a single machine. Antigravity supplies native agents, multi-agent swarm delegation, browser operation, and permissions; this plugin adds **Context Engineering** (`rules/AGENTS.md`, slice contracts) and **Factory Engineering** (deterministic `PreToolUse` / `Stop` lifecycle hooks, verification oracles with freshness receipts, holdout test guardrails, `file:line` diff auditing, and conflict-aware `git worktree` integration) alongside multi-stage agent skills.
 
 Requires Node.js 20+ and Git for worktree operations. No plugin runtime dependencies or API keys are required. Application verification may require the application's own dependencies, Docker or browser tooling.
 
@@ -9,8 +9,8 @@ Requires Node.js 20+ and Git for worktree operations. No plugin runtime dependen
 From a clone of the source repository, validate then install with the native CLI:
 
 ```sh
-agy plugin validate ./plugins/antigravity-harness --strict
-agy plugin install ./plugins/antigravity-harness
+agy plugin validate ./plugins/antigravity-factory --strict
+agy plugin install ./plugins/antigravity-factory
 agy plugin list
 ```
 

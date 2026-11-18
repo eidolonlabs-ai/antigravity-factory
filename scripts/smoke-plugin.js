@@ -5,7 +5,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 const archive = path.resolve(process.argv[2] || "");
 if (!fs.statSync(archive).isFile()) throw new Error("Supply a release archive");
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "factory isolated ")),
-  bundle = path.join(temp, "antigravity-harness"),
+  bundle = path.join(temp, "antigravity-factory"),
   project = path.join(temp, "project");
 function modes(dir, readonly) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -27,7 +27,7 @@ try {
   if (
     entries.some(
       (n) =>
-        !n.startsWith("antigravity-harness/") || n.split("/").includes(".."),
+        !n.startsWith("antigravity-factory/") || n.split("/").includes(".."),
     )
   )
     throw new Error("Unsafe archive paths");

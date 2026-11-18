@@ -1,4 +1,4 @@
-# Local harness implementation status
+# Local factory implementation status
 
 Implemented against the 2026-11-17 approved design in `docs/superpowers/`:
 
@@ -37,7 +37,7 @@ node bin/agy-factory.js verify --require-tests
 node bin/agy-factory.js audit-diff
 node bin/agy-factory.js verify --cwd examples/task-tracker --require-tests
 npm run package:plugin
-node scripts/smoke-plugin.js dist/antigravity-harness-1.1.0.tgz --native
+node scripts/smoke-plugin.js dist/antigravity-factory-1.1.0.tgz --native
 ```
 
 The example requires Docker, its installed API/web dependencies and Playwright Chromium; see the [example setup](../examples/task-tracker/README.md). Native bundle qualification requires `agy`. The [release guide](release.md) explains installation and the remaining distribution checks.
@@ -46,4 +46,4 @@ The example requires Docker, its installed API/web dependencies and Playwright C
 
 Native loader validation passed with local Antigravity CLI 1.5.9. Hook subprocess fixtures are documentation-derived, not authenticated live-session recordings. This execution did not install into the developer's active profile, run a paid host agent, qualify direct GitHub nested-bundle discovery, inspect Marketplace logo presentation, publish a release, or submit to Marketplace. Those distribution qualifications remain explicit release checklist items. Clone plus native local-directory installation is documented from official support, not claimed as exercised against this user's profile.
 
-The plugin is a cooperative local harness, not an OS sandbox or a sealed evaluator. Symlink target text is bound; external content reached through links requires separate verification. Submodules need separate component verification. VERIFIED covers configured requirements; independent review remains a workflow requirement even when evidence is not required mechanically. Rollback does not undo arbitrary test-command side effects.
+The plugin is a cooperative local factory, not an OS sandbox or a sealed evaluator. Symlink target text is bound; external content reached through links requires separate verification. Submodules need separate component verification. VERIFIED covers configured requirements; independent review remains a workflow requirement even when evidence is not required mechanically. Rollback does not undo arbitrary test-command side effects.

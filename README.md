@@ -1,24 +1,24 @@
-# Antigravity Harness
+# Antigravity Factory
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Antigravity Harness** is a specialized multi-agent development harness for solo developers working on a single machine, paired with a portable, zero-dependency Node.js CLI. Rather than building an external ticket-intake or queue-scheduling plant, it uses Antigravity's native agents, multi-agent swarm delegation, browser operation, and lifecycle controls—adding **Prompt, Context, and Harness Engineering** primitives for deterministic hooks, specialized skills, and isolated worktree workflows.
+**Antigravity Factory** is a specialized multi-agent development factory for solo developers working on a single machine, paired with a portable, zero-dependency Node.js CLI. Rather than building an external ticket-intake or queue-scheduling plant, it uses Antigravity's native agents, multi-agent swarm delegation, browser operation, and lifecycle controls—adding **Prompt, Context, and Factory Engineering** primitives for deterministic hooks, specialized skills, and isolated worktree workflows.
 
 It pairs **probabilistic agent skills & context** (specification planning, disjoint slice contracts, isolated parallel swarm/worktree authoring, browser/E2E testing, and fresh-context semantic code review) with **deterministic runtime physics** (stack detection, test/build verification oracles with SHA-256 freshness receipts, holdout test guardrails, `file:line` diff security scanning, and `PreToolUse` / `Stop` lifecycle hooks).
 
 ---
 
-## Prompt, Context, and Harness Engineering
+## Prompt, Context, and Factory Engineering
 
 Relying purely on conversational prompts or skills leads to probabilistic drift, context rot, test-cheating, and human-in-the-loop (HIL) interruption fatigue. Purely rigid scripts, on the other hand, cannot decompose product requirements, author full-stack slices, or reason about subtle semantic bugs.
 
-**Antigravity Harness** structures solo-developer multi-agent workflows across three layers:
+**Antigravity Factory** structures solo-developer multi-agent workflows across three layers:
 
 1. **Prompt Engineering (Probabilistic — Single Turn)**: Specialized skills (`factory-spec-planner`, `factory-pipeline`, `factory-qa-verifier`, `factory-security-reviewer`) and role-specific worker briefs that steer what each agent attempts.
 2. **Context Engineering (Probabilistic — Session State)**: Always-on workspace rules (`rules/AGENTS.md`), detected stack inventories (`detect`), and machine-checked slice ownership contracts (`.factory/spec.json`) so builders and fresh-context reviewers see high-signal boundaries.
-3. **Harness Engineering (Deterministic — Runtime Physics)**: `PreToolUse` guards (`pre-tool-guard.js`), bounded `Stop` verification circuit breakers (`stop-verify-gate.js`), binary pass/fail verification oracles (`verify`), holdout suite protection (`holdout/`), static diff scanners (`audit-diff`), and conflict-aware worktree integration (`land`).
+3. **Factory Engineering (Deterministic — Runtime Physics)**: `PreToolUse` guards (`pre-tool-guard.js`), bounded `Stop` verification circuit breakers (`stop-verify-gate.js`), binary pass/fail verification oracles (`verify`), holdout suite protection (`holdout/`), static diff scanners (`audit-diff`), and conflict-aware worktree integration (`land`).
 
-| Concern | Probabilistic Layer (Prompt & Context Engineering) | Deterministic Layer (Harness Engineering: CLI & Hooks) |
+| Concern | Probabilistic Layer (Prompt & Context Engineering) | Deterministic Layer (Factory Engineering: CLI & Hooks) |
 | :--- | :--- | :--- |
 | **Architecture & Planning** | `factory-spec-planner` locks shared contracts, acceptance criteria, and disjoint file slices | `agy-factory detect` inventories real stacks, `docker-compose.yml`, and runnable scripts |
 | **Parallel Worktree Build** | `factory-pipeline` fans out isolated swarm workers (`workspace: "share"`) per slice | `PreToolUse` hook blocks writes to `.env`, private keys, `.git/`, holdout tests, and out-of-slice files |
@@ -43,12 +43,12 @@ flowchart LR
 .
 ├── .agents/
 │   └── plugins.json                         # Workspace plugin discovery registration
-├── AGENTS.md                                # Contributor & harness rules for this repo
+├── AGENTS.md                                # Contributor & factory rules for this repo
 ├── package.json                             # Zero-dependency Node.js >=20 ESM manifest
 ├── bin/
 │   └── agy-factory.js                       # Root CLI entrypoint -> plugin CLI
 ├── plugins/
-│   └── antigravity-harness/                # Portable, self-contained Antigravity plugin
+│   └── antigravity-factory/                # Portable, self-contained Antigravity plugin
 │       ├── plugin.json                      # Plugin manifest (skills, rules, hooks bundle)
 │       ├── hooks.json                       # PreToolUse & Stop lifecycle hook wiring
 │       ├── bin/
@@ -65,7 +65,7 @@ flowchart LR
 │       │   ├── formatters.js                # GitHub Markdown & SARIF v2.1.0 formatters
 │       │   └── init.js                      # Antigravity plugin installer
 │       ├── rules/
-│       │   └── AGENTS.md                    # Portable always-on Antigravity Harness rules
+│       │   └── AGENTS.md                    # Portable always-on Antigravity Factory rules
 │       └── skills/
 │           ├── factory-pipeline/SKILL.md
 │           ├── factory-spec-planner/SKILL.md
@@ -85,7 +85,7 @@ flowchart LR
 
 ---
 
-## Local harness and distribution
+## Local factory and distribution
 
 Use one agent for small tasks and native Antigravity delegation only for independent slices. The plugin is not a scheduler, daemon, sealed evaluator or cross-platform adapter. Holdouts are guarded against selected modifications, not hidden. Receipts are unsigned local evidence.
 
@@ -94,13 +94,13 @@ Use one agent for small tasks and native Antigravity delegation only for indepen
 - [Policy, evidence, status and recovery contract](docs/verification-contract.md)
 - [Tested host compatibility and qualification limits](docs/compatibility.md)
 
-From this clone, run `agy plugin validate ./plugins/antigravity-harness --strict` then `agy plugin install ./plugins/antigravity-harness` to install natively. This changes your Antigravity profile. Project-local `init --mode link|copy` is an alternative registration/setup route. Avoid duplicate registration. Build a standalone archive with `npm run package:plugin`.
+From this clone, run `agy plugin validate ./plugins/antigravity-factory --strict` then `agy plugin install ./plugins/antigravity-factory` to install natively. This changes your Antigravity profile. Project-local `init --mode link|copy` is an alternative registration/setup route. Avoid duplicate registration. Build a standalone archive with `npm run package:plugin`.
 
 ## Quickstart
 
-Requires **Node.js `>= 20.0.0`**. The harness CLI and plugin use zero external npm dependencies, so they run immediately without `npm install`. **Docker & Docker Compose are optional**—if `docker compose` is installed and a repository includes `docker-compose.yml`, `agy-factory verify` validates it automatically; if Docker is not installed (or no compose file exists), the check is recorded as `NOT_RUN` without blocking verification.
+Requires **Node.js `>= 20.0.0`**. The factory CLI and plugin use zero external npm dependencies, so they run immediately without `npm install`. **Docker & Docker Compose are optional**—if `docker compose` is installed and a repository includes `docker-compose.yml`, `agy-factory verify` validates it automatically; if Docker is not installed (or no compose file exists), the check is recorded as `NOT_RUN` without blocking verification.
 
-### 1. Run the Harness Test Suite & Self-Checks
+### 1. Run the Factory Test Suite & Self-Checks
 
 ```bash
 # Run all CLI and lifecycle hook unit tests (node:test)
@@ -130,7 +130,7 @@ node bin/agy-factory.js audit-diff --cwd examples/task-tracker --all
 
 ## CLI Reference (`agy-factory`)
 
-Invoke via `node bin/agy-factory.js <command>`, `npx agy-factory <command>`, or directly from the portable plugin at `node plugins/antigravity-harness/bin/agy-factory.js <command>`.
+Invoke via `node bin/agy-factory.js <command>`, `npx agy-factory <command>`, or directly from the portable plugin at `node plugins/antigravity-factory/bin/agy-factory.js <command>`.
 
 ### `agy-factory detect`
 
@@ -258,7 +258,7 @@ Control endpoints exposed by every Digital Twin server (`createTwinServer`):
 
 ### `agy-factory init`
 
-Installs and configures `antigravity-harness` into another repository across Antigravity / Git hooks.
+Installs and configures `antigravity-factory` into another repository across Antigravity / Git hooks.
 
 ```bash
 node bin/agy-factory.js init [targetDir] [--mode link|copy] [--target agy] [--git-hook] [--json]
@@ -267,7 +267,7 @@ node bin/agy-factory.js init [targetDir] [--mode link|copy] [--target agy] [--gi
 | Flag | Description |
 | :--- | :--- |
 | `targetDir` | Destination repository path (positional, defaults to `process.cwd()`). |
-| `--mode <link\|copy>` | `link` (default) points `<targetDir>/.agents/plugins.json` at this repo's `plugins/` folder; `copy` vendors a standalone copy into `<targetDir>/.agents/plugins/antigravity-harness`. |
+| `--mode <link\|copy>` | `link` (default) points `<targetDir>/.agents/plugins.json` at this repo's `plugins/` folder; `copy` vendors a standalone copy into `<targetDir>/.agents/plugins/antigravity-factory`. |
 | `--target agy` | Optional compatibility flag; only Antigravity is supported. |
 | `--git-hook` | Opt into the non-destructive Git pre-commit verification installer. |
 | `--json` | Print installation paths as JSON. |
@@ -279,11 +279,11 @@ node bin/agy-factory.js init [targetDir] [--mode link|copy] [--target agy] [--gi
 
 ## Antigravity Lifecycle Hooks
 
-When the `antigravity-harness` plugin is enabled, [hooks.json](plugins/antigravity-harness/hooks.json) registers two self-contained lifecycle hooks:
+When the `antigravity-factory` plugin is enabled, [hooks.json](plugins/antigravity-factory/hooks.json) registers two self-contained lifecycle hooks:
 
 ### 1. `PreToolUse` Guardrail (`factory-pre-tool-guard`)
 
-Runs [pre-tool-guard.js](plugins/antigravity-harness/bin/pre-tool-guard.js) before `write_file`, `edit_file`, and `run_command`:
+Runs [pre-tool-guard.js](plugins/antigravity-factory/bin/pre-tool-guard.js) before `write_file`, `edit_file`, and `run_command`:
 - **Secret & Git File Protection (`deny`)**: Blocks agent writes/edits to `.env` and `.env.*` (while explicitly allowing `.env.example`, `.env.sample`, `.env.template`, and `.env.test`), SSH/PEM private keys (`id_rsa`, `id_ed25519`, `*.pem`, `*.key`), and `.git/config` or `.git/HEAD`.
 - **Receipt & Holdout Test Integrity (`deny`)**: Blocks direct `write_file` / `edit_file` calls targeting `.factory/**` (guarding supported tool writes to verification records; this is not a process sandbox) and protected holdout suites (`holdout/**` or `*.holdout.test.*` / `*.holdout.spec.*`).
 - **Catastrophic Shell Protection (`deny`)**: Blocks destructive system commands such as `rm -rf /`, `rm -rf ~`, `mkfs.*`, and fork bombs.
@@ -292,7 +292,7 @@ Runs [pre-tool-guard.js](plugins/antigravity-harness/bin/pre-tool-guard.js) befo
 
 ### 2. Bounded Opt-In `Stop` Verification Reminder (`factory-stop-verify-gate`)
 
-Runs [stop-verify-gate.js](plugins/antigravity-harness/bin/stop-verify-gate.js) when the agent goes idle (`terminationReason: "NO_TOOL_CALL"` and `fullyIdle: true`):
+Runs [stop-verify-gate.js](plugins/antigravity-factory/bin/stop-verify-gate.js) when the agent goes idle (`terminationReason: "NO_TOOL_CALL"` and `fullyIdle: true`):
 - **Opt-In Activation**: Off by default so exploratory chats are never interrupted. Enable per-repository by setting `"enforceStopVerify": true` in `.factory.json`, or per-session via environment variable `FACTORY_ENFORCE_STOP=1`.
 - **Freshness Check**: Versioned status binds HEAD, staged index, working source bytes/modes, symlink target text, and policy. Both normal `model_stop` and legacy `NO_TOOL_CALL` payloads are supported. Passing checks do not stand in for required review/browser evidence.
 - **Bounded Loop Protection**: `stop.maxContinuations` is 0–3 (default 1). Edits do not reset the conversation budget. Exhaustion allows the host to end while conversation-specific status remains `EXHAUSTED`; this is not successful completion. Host hook errors can fail open.
@@ -304,7 +304,7 @@ Runs [stop-verify-gate.js](plugins/antigravity-harness/bin/stop-verify-gate.js) 
 
 | Component | Path | Purpose |
 | :--- | :--- | :--- |
-| **Portable Rules** | `rules/AGENTS.md` | Always-on 5 Antigravity Harness rules (Plan, Isolate, Verify, Audit, Preserve Docs). |
+| **Portable Rules** | `rules/AGENTS.md` | Always-on 5 Antigravity Factory rules (Plan, Isolate, Verify, Audit, Preserve Docs). |
 | **`factory-pipeline`** | `skills/factory-pipeline/SKILL.md` | End-to-end 4-stage orchestrator across planning, parallel swarm, QA, and security review. |
 | **`factory-spec-planner`** | `skills/factory-spec-planner/SKILL.md` | Runs `detect`, locks shared API/DB contracts, and emits a disjoint Slice Ownership Table. |
 | **`factory-qa-verifier`** | `skills/factory-qa-verifier/SKILL.md` | Runs `verify --require-tests`, checks `PASS`/`FAIL`/`NOT_RUN` & receipt, and runs `browser` E2E QA. |
@@ -314,20 +314,20 @@ Runs [stop-verify-gate.js](plugins/antigravity-harness/bin/stop-verify-gate.js) 
 
 ## Using This Repository as a GitHub Template
 
-Clone the repository to try the harness, or copy it into a new repository to start a project. If your GitHub copy is configured as a template, you can also use **Use this template**.
+Clone the repository to try the factory, or copy it into a new repository to start a project. If your GitHub copy is configured as a template, you can also use **Use this template**.
 
 1. Clone or create your project repository.
 2. *(Optional)* Remove the reference demo app once you no longer need it:
    ```bash
    rm -rf examples/task-tracker
    ```
-3. **Start building**: Open the repository in Antigravity—`.agents/plugins.json` automatically activates the `antigravity-harness` plugin, rules, lifecycle hooks, and `factory-*` skills for local verification and diff security audits.
+3. **Start building**: Open the repository in Antigravity—`.agents/plugins.json` automatically activates the `antigravity-factory` plugin, rules, lifecycle hooks, and `factory-*` skills for local verification and diff security audits.
 
 ---
 
 ## Installing & Reusing Across Existing Repositories
 
-You can also attach `antigravity-harness` to any existing project using whichever workflow fits your team:
+You can also attach `antigravity-factory` to any existing project using whichever workflow fits your team:
 
 ### Option A: Link into Another Repo (Local Development)
 
@@ -339,7 +339,7 @@ node bin/agy-factory.js init /path/to/your-repo --mode link
 
 ### Option B: Copy Self-Contained Plugin into a Repo (Team / VCS)
 
-Vendors `plugins/antigravity-harness/` directly into `<target-repo>/.agents/plugins/antigravity-harness` with zero external path dependencies, ready to commit to git:
+Vendors `plugins/antigravity-factory/` directly into `<target-repo>/.agents/plugins/antigravity-factory` with zero external path dependencies, ready to commit to git:
 
 ```bash
 node bin/agy-factory.js init /path/to/your-repo --mode copy
@@ -347,7 +347,7 @@ node bin/agy-factory.js init /path/to/your-repo --mode copy
 
 ### Option C: Manual `.agents/plugins.json` Declaration
 
-Add an entry pointing to the parent directory containing `antigravity-harness/` in your project's `.agents/plugins.json`:
+Add an entry pointing to the parent directory containing `antigravity-factory/` in your project's `.agents/plugins.json`:
 
 ```json
 {
@@ -365,10 +365,10 @@ Install once for every workspace on your machine by copying the plugin bundle in
 
 ```bash
 mkdir -p ~/.gemini/config/plugins
-cp -R plugins/antigravity-harness ~/.gemini/config/plugins/antigravity-harness
+cp -R plugins/antigravity-factory ~/.gemini/config/plugins/antigravity-factory
 ```
 
-Once copied or registered via `.agents/plugins.json`, Antigravity discovers `antigravity-harness` automatically and activates its rules, lifecycle hooks, and `factory-*` skills on the next turn.
+Once copied or registered via `.agents/plugins.json`, Antigravity discovers `antigravity-factory` automatically and activates its rules, lifecycle hooks, and `factory-*` skills on the next turn.
 
 ---
 
