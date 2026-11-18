@@ -224,7 +224,7 @@ export function evaluatePreToolUse(payload, { env = process.env } = {}) {
           respectOutside: false,
         });
         if (fileDecision.decision !== "allow") {
-          return fileDecision;
+          return formatPreToolUseWireOutput(fileDecision);
         }
         if (activeSlice && !fileDecision.outside && fileDecision.rel !== null) {
           const sliceDecision = checkSliceBoundary(
@@ -233,7 +233,7 @@ export function evaluatePreToolUse(payload, { env = process.env } = {}) {
             loaded.allowList,
           );
           if (sliceDecision.decision !== "allow") {
-            return sliceDecision;
+            return formatPreToolUseWireOutput(sliceDecision);
           }
         }
       }
@@ -252,19 +252,21 @@ export function evaluatePreToolUse(payload, { env = process.env } = {}) {
       if (loaded.error) {
         return { decision: "deny", reason: loaded.error };
       }
-      return evaluateShellCommand(commandLine, {
-        root: targetRoot,
-        cwd: cmdCwd,
-        ctx: loaded.ctx,
-        respectOutside: false,
-        gitPushDecision: "force_ask",
-        gitPushForceDecision: "force_ask",
-        gitAskDecision: "force_ask",
-        sliceCheck: activeSlice
-          ? (relOrRaw) =>
-              checkSliceBoundary(relOrRaw, activeSlice, loaded.allowList)
-          : undefined,
-      });
+      return formatPreToolUseWireOutput(
+        evaluateShellCommand(commandLine, {
+          root: targetRoot,
+          cwd: cmdCwd,
+          ctx: loaded.ctx,
+          respectOutside: false,
+          gitPushDecision: "force_ask",
+          gitPushForceDecision: "force_ask",
+          gitAskDecision: "force_ask",
+          sliceCheck: activeSlice
+            ? (relOrRaw) =>
+                checkSliceBoundary(relOrRaw, activeSlice, loaded.allowList)
+            : undefined,
+        }),
+      );
     }
 
     return { decision: "allow" };
@@ -274,7 +276,16 @@ export function evaluatePreToolUse(payload, { env = process.env } = {}) {
 }
 
 export function formatPreToolUseWireOutput(result) {
-  return result && typeof result === "object" ? result : { decision: "allow" };
+  if (!result || typeof result !== "object") {
+    return { decision: "allow" };
+  }
+  const wire = {
+    decision: typeof result.decision === "string" ? result.decision : "allow",
+  };
+  if (typeof result.reason === "string" && result.reason) {
+    wire.reason = result.reason;
+  }
+  return wire;
 }
 
 async function readStdin() {

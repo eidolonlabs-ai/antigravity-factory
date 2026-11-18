@@ -1009,4 +1009,12 @@ test('PreToolUse guard blocks symlink escapes, dangling symlinks, ln -s protecte
     }).decision,
     'allow'
   );
+
+  // Ensure wire output emits only protojson-supported fields (decision, reason)
+  const deniedWire = evaluatePreToolUse({
+    cwd: root,
+    workspacePaths: [root],
+    toolCall: { name: 'run_command', args: { CommandLine: 'rm -rf .factory' } },
+  });
+  assert.deepEqual(Object.keys(deniedWire).sort(), ['decision', 'reason']);
 });
