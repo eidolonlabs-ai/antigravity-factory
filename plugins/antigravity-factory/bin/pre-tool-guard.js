@@ -2,6 +2,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  decideContractCase,
+  evaluateShellCommand,
+  inspectTargetPath,
+} from "../lib/guard.js";
+
+export { decideContractCase };
 
 const ALLOWED_ENV_TEMPLATES = new Set([
   ".env.example",
@@ -223,6 +230,10 @@ function normalizeRmTarget(rawTarget) {
 }
 
 function inspectFileTarget(rawPath) {
+  const guardResult = inspectTargetPath(rawPath, { respectOutside: false });
+  if (guardResult.decision !== "allow") {
+    return guardResult;
+  }
   if (!rawPath || typeof rawPath !== "string") {
     return { decision: "allow" };
   }
@@ -379,6 +390,23 @@ function extractInPlaceEditTargets(cmd, args) {
 }
 
 function inspectCommandLine(commandLine, { workspaceRoot, activeSlice, depth = 0 } = {}) {
+  if (depth === 0) {
+    const guardResult = evaluateShellCommand(commandLine, {
+      root: workspaceRoot,
+      cwd: workspaceRoot,
+      respectOutside: false,
+      gitPushDecision: "deny",
+      gitPushForceDecision: "force_ask",
+      gitAskDecision: "force_ask",
+      sliceCheck:
+        activeSlice && workspaceRoot
+          ? (targetPath) => inspectSliceOwnership(targetPath, workspaceRoot, activeSlice)
+          : undefined,
+    });
+    if (guardResult.decision !== "allow") {
+      return guardResult;
+    }
+  }
   if (!commandLine || typeof commandLine !== "string") {
     return { decision: "allow" };
   }

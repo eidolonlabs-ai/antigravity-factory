@@ -16,7 +16,9 @@ agy plugin list
 
 Installation changes your Antigravity profile. Alternatively register a workspace copy using this bundle's CLI: `node <plugin-root>/bin/agy-factory.js init /path/to/project --mode copy`. Link mode is for development and requires the original bundle to remain available. Choose one registration route to avoid loading duplicate rules/hooks. Existing malformed registries or locally modified copies cause an error rather than silent replacement.
 
-Invoke `/factory-pipeline`, `/factory-spec-planner`, `/factory-qa-verifier`, or `/factory-security-reviewer` in Antigravity. Keep small changes in one agent; delegate independent slices only when useful.
+Invoke `/factory-pipeline` end-to-end or step through `/factory-setup`, `/factory-intake`, `/factory-plan`, `/factory-build`, `/factory-verify`, `/factory-review`, and `/factory-status` in Antigravity (paired with `/grill-me`, `/plan`, `/goal`, `swarm`, `/teamwork`, `/run-workflow`, `/boost`, and `/browser`). Keep small changes in one agent; delegate parallel slices via `.factory/spec.json` disjoint ownership, `FACTORY_SLICE=<slice>`, and `agy-factory land` only when independent modules benefit. The 8 skills share centralized deterministic CLI scripts under `bin/` (`agy-factory.js`, `pre-tool-guard.js`, `stop-verify-gate.js`) instead of duplicating scripts per skill folder, and ship native subagent definitions under `agents/` alongside reference prompts in `roles/` (`factory-architect`, `factory-builder`, `factory-reviewer`).
+
+Unlike plain prompts/skills (which can drift, skip tests, or guess through vague requests), this plugin shifts ambiguity upfront—`factory-intake` pushes back on underspecified requirements (`needs_clarification` across the 4-Part Matrix) and `factory-plan` freezes contracts and Milestone 1.5 tests before `factory-build` starts. Only jump straight to `factory-build` when an approved spec, frozen tests, and slice boundaries already exist.
 
 ## Local delivery
 

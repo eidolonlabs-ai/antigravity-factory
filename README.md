@@ -8,31 +8,85 @@ It pairs **probabilistic agent skills & context** (specification planning, disjo
 
 ---
 
-## Prompt, Context, and Factory Engineering
+## Why Prompts & Skills Alone Fail vs. This Software Factory
 
-Relying purely on conversational prompts or skills leads to probabilistic drift, context rot, test-cheating, and human-in-the-loop (HIL) interruption fatigue. Purely rigid scripts, on the other hand, cannot decompose product requirements, author full-stack slices, or reason about subtle semantic bugs.
+Prompts and `SKILL.md` instructions are **probabilistic**—even great prompts drift over long horizons, rationalize skipping tests, bloat context with raw build logs, or stall on permission prompts. **Antigravity Factory** pairs Antigravity's native agent workflows (`/grill-me`, `/plan`, `/goal`, `swarm`, `/teamwork`, `/run-workflow`, `/boost`, `browser`) with **deterministic runtime physics**:
+
+| Layer | Nature | What It Provides Here |
+| :--- | :--- | :--- |
+| **1. Prompt Engineering** | Probabilistic (Single Turn) | 8 unified skills (`factory-pipeline` through `factory-status`) & 3 core roles (`factory-architect`, `factory-builder`, `factory-reviewer`) |
+| **2. Context Engineering** | Probabilistic (Session State) | Always-on workspace rules (`rules/AGENTS.md`), detected stack inventories (`detect`), `/tmp/*.log` hygiene, and `.factory/spec.json` slice contracts |
+| **3. Factory / Harness Engineering** | Deterministic (Runtime Physics) | `PreToolUse` scope/secret/holdout guards, bounded `Stop` verification circuit breakers, binary exit-code oracles (`NOT_RUN !== PASS`), SHA-256 freshness receipts, worktree `land`, and `audit-diff` |
+
+| Unattended Failure Mode | Why Prompts/Skills Alone Fail | How Antigravity Factory Solves It Deterministically |
+| :--- | :--- | :--- |
+| **Premature "Done" Claims** | Models stop when code compiles without running real stack/E2E checks | `agy-factory verify --require-tests` + bounded `Stop` gate + recorded `/browser` & `review` evidence digests (`NOT_RUN !== PASS`) |
+| **Context Window Rot** | Giant test/build logs crowd out architectural constraints | Output redirected to `/tmp/*.log` (tail-only inspection) + isolated per-slice `swarm` worktrees & cold-context `factory-reviewer` |
+| **Test-Cheating / Weakened Assertions** | Agents edit tests or substitute mocks to force green builds | **Milestone 1.5 Frozen Adversarial Tests** + `holdout/` write protection in `pre-tool-guard.js` + real Docker Compose checks |
+| **HIL Permission Fatigue** | Unsupervised runs stall on repeated `[y/n]` confirmations | Disposable `git worktree` isolation (`workspace: "share"`) paired with `auto` / `Auto-Proceed` inside strict `PreToolUse` boundaries |
+
+---
+
+## Shift-Left Engineering: Built-In Spec Pushback
+
+Long-running builds and self-checking verification loops only succeed when requirements, edge cases, and failure tests are locked **before** implementation starts. Instead of rushing to generate code from a vague prompt, `antigravity-factory` forces effort upfront:
+
+- **Pushback on Underspecified Requests (`factory-intake`)**: If your goal omits error handling, data/API contracts, or edge cases, `factory-intake` (`factory-architect` + `/grill-me`) **pushes back** (`needs_clarification`), interviewing you one decision at a time across the **4-Part State & Edge-Case Matrix** (1. Out-of-order/duplicate inputs; 2. Concurrency/row locks & `AbortController`; 3. Clock/timezone `as_of` vs `now()`; 4. Dual-write atomicity).
+- **Pre-Build Contract & Test Freeze (`factory-plan` → `factory-build`)**: `factory-plan` locks `SPEC.md`, Docker Compose healthchecks, **Milestone 1.5 Frozen Adversarial Tests**, and disjoint `.factory/spec.json` slices—and `factory-build` refuses to code non-trivial tasks until those frozen contracts and failing tests exist.
+
+---
+
+## How to Choose Your Entry Point & Stage
+
+Default to **`factory-pipeline`** for guided Phase 0–4 orchestration. Jump directly to a stage skill only when its upstream prerequisites are already ready (see [docs/entry-paths.md](docs/entry-paths.md) for minimum inputs and pushback rules):
+
+| Starting Point | What to Give `factory-intake` | When the Factory Pushes Back |
+| :--- | :--- | :--- |
+| **1. New / Greenfield App** | Intended users, core journeys, stack constraints, data/API expectations | Undefined schemas/endpoints or unresolved 4-Part Matrix edge cases |
+| **2. Existing / Brownfield Repo** | Repo path, concrete goal, conventions, test commands, baseline failures | Missing test scripts (`NOT_RUN`) or unadopted `.factory.json` |
+| **3. Bug Fix (Reproduce-First)** | Expected vs. actual behavior, repro steps, environment, stack traces | Missing reproduction steps or skipping a failing regression test |
+| **4. Feature / Behavior Change** | Desired behavior, exemplar files, schema/API compatibility constraints | Unspecified migrations, missing error paths, or unmapped acceptance |
+| **5. Refactor / Migration** | Source/target patterns, invariants, rollout scope, verification oracle | Missing baseline tests or overlapping multi-file edits |
+
+| Phase | Skill | When to Invoke Directly |
+| :--- | :--- | :--- |
+| **All (E2E)** | `factory-pipeline` | Starting a feature, app, bug fix, or refactor from scratch with built-in intake/freeze gates |
+| **Phase 0** | `factory-setup` | Adopting a repo (`agy-factory init`, `.factory.json`, `/tmp/*.log` hygiene, baseline `detect`) |
+| **Phase 1** | `factory-intake` | Auditing an incomplete spec (e.g. `benchmarks/chronograph/input/original.md`) or running `/grill-me` |
+| **Phase 2** | `factory-plan` | Intake is resolved; ready to freeze `SPEC.md`, Compose healthchecks, Milestone 1.5 tests, and `.factory/spec.json` |
+| **Phase 3** | `factory-build` | Spec & frozen tests are ready; run `/goal`, `/boost`, or parallel `swarm` (`workspace: "share"`) + `agy-factory land` |
+| **Phase 4A** | `factory-verify` | Running `agy-factory verify --require-tests` (`NOT_RUN !== PASS`) + `/browser` E2E & `evidence record` |
+| **Phase 4B** | `factory-review` | Running `agy-factory audit-diff` + cold-context `factory-reviewer` (**Reproduce Before Fixing**) |
+| **Inspect** | `factory-status` | Checking `.factory/verify-receipt.json` freshness, evidence digests, and stop-gate state |
+
+---
+
+## Prompt, Context, and Factory Engineering
 
 **Antigravity Factory** structures solo-developer multi-agent workflows across three layers:
 
-1. **Prompt Engineering (Probabilistic — Single Turn)**: Specialized skills (`factory-spec-planner`, `factory-pipeline`, `factory-qa-verifier`, `factory-security-reviewer`) and role-specific worker briefs that steer what each agent attempts.
+1. **Prompt Engineering (Probabilistic — Single Turn)**: Specialized 5-phase skills (`factory-pipeline`, `factory-setup`, `factory-intake`, `factory-plan`, `factory-build`, `factory-verify`, `factory-review`, `factory-status`) and role profiles (`factory-architect`, `factory-builder`, `factory-reviewer`) that steer what each agent attempts.
 2. **Context Engineering (Probabilistic — Session State)**: Always-on workspace rules (`rules/AGENTS.md`), detected stack inventories (`detect`), and machine-checked slice ownership contracts (`.factory/spec.json`) so builders and fresh-context reviewers see high-signal boundaries.
 3. **Factory Engineering (Deterministic — Runtime Physics)**: `PreToolUse` guards (`pre-tool-guard.js`), bounded `Stop` verification circuit breakers (`stop-verify-gate.js`), binary pass/fail verification oracles (`verify`), holdout suite protection (`holdout/`), static diff scanners (`audit-diff`), and conflict-aware worktree integration (`land`).
 
 | Concern | Probabilistic Layer (Prompt & Context Engineering) | Deterministic Layer (Factory Engineering: CLI & Hooks) |
 | :--- | :--- | :--- |
-| **Architecture & Planning** | `factory-spec-planner` locks shared contracts, acceptance criteria, and disjoint file slices | `agy-factory detect` inventories real stacks, `docker-compose.yml`, and runnable scripts |
-| **Parallel Worktree Build** | `factory-pipeline` fans out isolated swarm workers (`workspace: "share"`) per slice | `PreToolUse` hook blocks writes to `.env`, private keys, `.git/`, holdout tests, and out-of-slice files |
-| **QA & Verification Oracles** | `factory-qa-verifier` drives live UI user flows via the `browser` subagent | `agy-factory verify` enforces `NOT_RUN !== PASS` and writes `.factory/verify-receipt.json` |
-| **Completion & Loop Bounds** | Portable `rules/AGENTS.md` requires verification before declaring done | Opt-in `Stop` hook checks configured status with a bounded per-conversation circuit breaker |
-| **Fresh-Context Review** | `factory-security-reviewer` conducts read-only semantic review of `git diff` | `agy-factory audit-diff` flags hardcoded secrets, SQL interpolation, `eval`, and XSS sinks |
+| **Setup & Entry Points** | `factory-setup` + `factory-intake` (`/grill-me` + read-only `factory-architect` on the 4-Part Matrix) | `agy-factory init` + `agy-factory detect` inventory real stacks and baseline checks |
+| **Contracts & Frozen Tests** | `factory-plan` locks `SPEC.md`, contracts, Compose healthchecks, and Milestone 1.5 tests | `agy-factory plan` persists `.factory/spec.json`; `PreToolUse` guards `holdout/**` |
+| **Parallel Worktree Build** | `factory-build` (`/goal`, `/boost`, or `swarm` `workspace: "share"` / `/teamwork` / `/run-workflow`) | `PreToolUse` hook blocks `.env`, keys, `.git/`, holdouts, and out-of-slice edits; `land` integrates |
+| **QA & Verification Oracles** | `factory-verify` drives live UI user flows via the `browser` subagent (`/browser`) | `agy-factory verify` enforces `NOT_RUN !== PASS` and writes `.factory/verify-receipt.json` |
+| **Completion & Loop Bounds** | Portable `rules/AGENTS.md` + `factory-status` require verified status before declaring done | Opt-in `Stop` hook checks configured status with a bounded per-conversation circuit breaker |
+| **Fresh-Context Review** | `factory-review` (`factory-reviewer`) runs read-only audit + **Reproduce Before Fixing** | `agy-factory audit-diff` flags hardcoded secrets, SQL interpolation, `eval`, and XSS sinks |
 
 ```mermaid
 flowchart LR
-    P["Stage 1: Spec & Ownership<br/>(detect + factory-spec-planner)"] --> B["Stage 2: Parallel Swarm<br/>(workspace: share + PreToolUse guard)"]
-    B --> V["Stage 3: QA Verification<br/>(verify receipt + browser E2E)"]
-    V --> R["Stage 4: Security Review<br/>(audit-diff + semantic review)"]
+    S["Phase 0: Setup<br/>(factory-setup + init/detect)"] --> I["Phase 1: Intake<br/>(factory-intake + /grill-me)"]
+    I --> P["Phase 2: Plan & Freeze<br/>(factory-plan + spec.json)"]
+    P --> B["Phase 3: Build<br/>(factory-build + swarm / land)"]
+    B --> V["Phase 4A: Verify<br/>(factory-verify + browser E2E)"]
+    V --> R["Phase 4B: Review<br/>(factory-review + audit-diff)"]
     R -- "CHANGES REQUESTED" --> B
-    R -- "APPROVE" --> D["Delivery Report<br/>(configured gates + review)"]
+    R -- "APPROVE" --> D["factory-status<br/>(Delivery Report)"]
 ```
 
 ---
@@ -66,13 +120,27 @@ flowchart LR
 │       │   └── init.js                      # Antigravity plugin installer
 │       ├── rules/
 │       │   └── AGENTS.md                    # Portable always-on Antigravity Factory rules
+│       ├── roles/
+│       │   ├── factory-architect.md         # Read-only intake & spec architect role
+│       │   ├── factory-builder.md           # Worktree-isolated slice builder role
+│       │   └── factory-reviewer.md          # Cold-context read-only reviewer role
 │       └── skills/
 │           ├── factory-pipeline/SKILL.md
-│           ├── factory-spec-planner/SKILL.md
-│           ├── factory-qa-verifier/SKILL.md
-│           └── factory-security-reviewer/SKILL.md
+│           ├── factory-setup/SKILL.md
+│           ├── factory-intake/SKILL.md
+│           ├── factory-plan/SKILL.md
+│           ├── factory-build/SKILL.md
+│           ├── factory-verify/SKILL.md
+│           ├── factory-review/SKILL.md
+│           └── factory-status/SKILL.md
+├── benchmarks/
+│   └── chronograph/                         # Official cross-factory intake & build benchmark
+├── contract/                                # Shared family guard vectors & schemas
+├── docs/
+│   ├── entry-paths.md                       # 5 developer entry points & 5-phase workflow
+│   └── ...
 ├── examples/
-│   └── task-tracker/                        # Reference full-stack app (Postgres + Express + React)
+│   └── task-tracker/                        # Fast smoke/test app fixture (not a benchmark)
 │       ├── docker-compose.yml
 │       ├── db/init.sql
 │       ├── api/                             # Node 20 + Express + pg REST API & unit tests
@@ -89,6 +157,8 @@ flowchart LR
 
 Use one agent for small tasks and native Antigravity delegation only for independent slices. The plugin is not a scheduler, daemon, sealed evaluator or cross-platform adapter. Holdouts are guarded against selected modifications, not hidden. Receipts are unsigned local evidence.
 
+- [Family contract (`CONTRACT.md`)](CONTRACT.md) and [5 developer entry points](docs/entry-paths.md)
+- [ChronoGraph official benchmark](benchmarks/chronograph/README.md)
 - [Implementation status, validation results and qualification limits](docs/implementation-status.md)
 - [Installable bundle and Marketplace preparation](docs/release.md)
 - [Policy, evidence, status and recovery contract](docs/verification-contract.md)
@@ -222,7 +292,7 @@ node bin/agy-factory.js audit-diff [--cwd <dir>] [--base <git-ref>] [--allow-pat
 - `dangerous-exec` (`high`): Dynamic code execution via `eval` or the `Function` constructor.
 - `sql-interpolation` (`high`): Unparameterized template-string value interpolation inside SQL queries.
 - `xss-sink` (`medium`): Raw HTML injection properties and direct DOM `innerHTML` assignments.
-- *Inline suppression*: Append `factory-audit-ignore` on intentional unit-test fixture lines (subject to manual audit in `factory-security-reviewer`).
+- *Inline suppression*: Append `factory-audit-ignore` on intentional unit-test fixture lines (subject to manual audit in `factory-review`).
 
 **Statuses & Exit Codes:**
 - `APPROVE_CANDIDATE` (exit `0`): Zero findings.
@@ -300,15 +370,20 @@ Runs [stop-verify-gate.js](plugins/antigravity-factory/bin/stop-verify-gate.js) 
 
 ---
 
-## Bundled Skills & Portable Rules
+## Bundled Skills, Roles & Portable Rules
 
 | Component | Path | Purpose |
 | :--- | :--- | :--- |
 | **Portable Rules** | `rules/AGENTS.md` | Always-on 5 Antigravity Factory rules (Plan, Isolate, Verify, Audit, Preserve Docs). |
-| **`factory-pipeline`** | `skills/factory-pipeline/SKILL.md` | End-to-end 4-stage orchestrator across planning, parallel swarm, QA, and security review. |
-| **`factory-spec-planner`** | `skills/factory-spec-planner/SKILL.md` | Runs `detect`, locks shared API/DB contracts, and emits a disjoint Slice Ownership Table. |
-| **`factory-qa-verifier`** | `skills/factory-qa-verifier/SKILL.md` | Runs `verify --require-tests`, checks `PASS`/`FAIL`/`NOT_RUN` & receipt, and runs `browser` E2E QA. |
-| **`factory-security-reviewer`** | `skills/factory-security-reviewer/SKILL.md` | Runs `audit-diff` (`file:line`) + read-only semantic diff audit (`APPROVE` / `CHANGES REQUESTED`). |
+| **Core Roles** | `roles/factory-{architect,builder,reviewer}.md` | Read-only intake architect, worktree builder, and cold-context reviewer personas. |
+| **`factory-pipeline`** | `skills/factory-pipeline/SKILL.md` | End-to-end 5-phase orchestrator across Setup, Intake, Plan, Build, Verify, Review, and Status. |
+| **`factory-setup`** | `skills/factory-setup/SKILL.md` | Phase 0 workspace adoption (`init`, `detect`), `.factory.json` policy, and log hygiene. |
+| **`factory-intake`** | `skills/factory-intake/SKILL.md` | Phase 1 entry-point routing + `/grill-me` & `factory-architect` on the 4-Part Edge-Case Matrix. |
+| **`factory-plan`** | `skills/factory-plan/SKILL.md` | Phase 2 contract freeze (`SPEC.md`, Compose healthchecks, Milestone 1.5 tests, `.factory/spec.json`). |
+| **`factory-build`** | `skills/factory-build/SKILL.md` | Phase 3 single (`/goal`, `/boost`) or parallel `swarm` (`workspace: "share"`) execution + `land`. |
+| **`factory-verify`** | `skills/factory-verify/SKILL.md` | Phase 4A deterministic `verify --require-tests` (`NOT_RUN !== PASS`) + `/browser` E2E evidence. |
+| **`factory-review`** | `skills/factory-review/SKILL.md` | Phase 4B `audit-diff` (`file:line`) + cold-context `factory-reviewer` + **Reproduce Before Fixing**. |
+| **`factory-status`** | `skills/factory-status/SKILL.md` | Read-only `status --json` readiness, digest freshness, and owner handoff summary. |
 
 ---
 

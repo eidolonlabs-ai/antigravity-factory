@@ -23,7 +23,7 @@ Independent reviews covered verification freshness and the final code/security d
 | `audit-diff` | APPROVE_CANDIDATE with zero findings |
 | Independent semantic/security review | Findings resolved and affected regression tests passed |
 | Extracted read-only bundle smoke | Packaged CLI, copy installation and hook subprocesses passed |
-| Native strict validation | Antigravity 1.5.9: four skills, one rule, two hooks; zero findings |
+| Native strict validation | Antigravity 1.5.9 (2026-11-17 baseline): four skills, one rule, two hooks; zero findings (current bundle expands skills to 8 unified `factory-*` stages + 3 `roles/` profiles) |
 
 NOT_RUN entries represent unconfigured optional checks; they are not passes. Both workspaces reported VERIFIED with fresh receipts after validation. Receipts are local generated records, not committed attestations: staging, committing, or editing changes the verification subject and requires verification again. These results describe local checks, not GitHub Actions or authenticated host-session qualification.
 

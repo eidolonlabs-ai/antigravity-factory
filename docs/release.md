@@ -1,6 +1,6 @@
 # Plugin distribution and release
 
-The canonical source is `plugins/antigravity-factory/`. Keep its supported manifest fields, skills, rules, hook scripts and Node libraries self-contained. Root scripts/tests/example apps are development infrastructure, not plugin runtime dependencies.
+The canonical source is `plugins/antigravity-factory/`. Keep its supported manifest fields (`plugin.json` — strictly documented Antigravity fields), 8 skills (`factory-pipeline` through `factory-status`), native subagents (`agents/factory-{architect,builder,reviewer}.md`) plus reference `roles/`, rules (`rules/AGENTS.md`), hook scripts and Node CLI/libraries (`bin/`, `lib/`) self-contained. Skills invoke the shared plugin-level `bin/agy-factory.js` CLI rather than duplicating scripts inside each skill directory, and parallel implementation slices use `.factory/spec.json`, `FACTORY_SLICE`, and `agy-factory land`. Root scripts/tests/example apps are development infrastructure, not plugin runtime dependencies.
 
 ## Repository installation
 

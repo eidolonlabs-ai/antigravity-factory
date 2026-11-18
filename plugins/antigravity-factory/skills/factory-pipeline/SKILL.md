@@ -1,95 +1,74 @@
 ---
 name: factory-pipeline
 description: >-
-  Orchestrates the 4-stage Antigravity Factory workflow end-to-end across
-  Antigravity: spec & slice planning,
-  isolated parallel swarm or git worktree execution, deterministic QA + live
-  browser/E2E verification, and diff security review. Use this skill when
-  building features, full-stack apps, services, or multi-file refactors from
-  start to finish.
+  End-to-end 5-phase Antigravity Factory orchestrator that shifts work upfront—
+  pushing back on underspecified requests during read-only intake, locking
+  contracts and Milestone 1.5 frozen adversarial tests before implementation,
+  then running isolated single/parallel swarm worktrees, QA + browser checks,
+  cold-context review, and status reporting.
 ---
 
 # Factory Pipeline Orchestrator
 
-Run software delivery as a disciplined **4-stage Antigravity Factory workflow** combining probabilistic multi-agent execution with deterministic CLI gates. Never collapse planning, parallel authoring, verification, and security review into an unverified single-pass edit.
+Orchestrate solo-developer multi-agent software delivery across five disciplined phases combining probabilistic Antigravity workflows (`/grill-me`, `/plan`, `/goal`, `swarm`, `/teamwork`, `/run-workflow`, `/boost`, `browser`) with deterministic `agy-factory` CLI gates and hooks.
 
 ## Locating the `agy-factory` CLI
 
-Resolve the `agy-factory` binary once at the start of the pipeline using the first path that exists:
+Resolve `FACTORY_CLI` once at the start of the pipeline using the first path that exists:
 
 1. **Workspace binary / npm link**: `npx --no-install agy-factory` or `node ./bin/agy-factory.js`
 2. **Copied workspace plugin**: `node ./.agents/plugins/antigravity-factory/bin/agy-factory.js`
-3. **Bundled relative to this skill**: `node <plugin-dir>/bin/agy-factory.js` (i.e. [agy-factory.js](../../bin/agy-factory.js), two directories up from `skills/factory-pipeline/`—works from `~/.gemini/config/plugins/antigravity-factory/bin/agy-factory.js` or any linked plugin path)
-
-Set `FACTORY_CLI` in commands below to whichever path resolved.
+3. **Bundled relative to this skill**: `node <plugin-dir>/bin/agy-factory.js` (two directories up from `skills/factory-pipeline/`)
 
 ---
 
-## Stage 1: Specification & Disjoint Ownership (`factory-spec-planner`)
+## Shift-Left Gate
 
-Follow [factory-spec-planner](../factory-spec-planner/SKILL.md) before touching application code:
+Do **not** enter Phase 3 (`factory-build`) for non-trivial work until:
+- Phase 1 (`factory-intake`) has pushed back on all ambiguities and resolved blocking questions (including the **4-Part State & Edge-Case Matrix**) in writing.
+- Phase 2 (`factory-plan`) has locked `SPEC.md`/contracts, Compose healthchecks, disjoint `.factory/spec.json` slices, and failing **Milestone 1.5 Frozen Adversarial Tests** (or a failing reproduction test for bug fixes).
 
-1. **Inventory the stack**:
-   ```bash
-   $FACTORY_CLI detect --cwd . --json
-   ```
-2. **Lock shared contracts upfront**: Define database schemas, REST/RPC endpoints, request/response shapes, environment variables (`.env.example`), and shared types before spawning builders so workers never guess interfaces.
-3. **Define acceptance criteria**: Write concrete, testable functional and error-handling criteria.
-4. **Publish a Slice Ownership Table**: Partition work into slices with **strictly disjoint** `Owned Files`, explicit `Forbidden Files`, and a per-slice `Verification Command`. If a task touches only 1–2 tightly coupled files, keep a single slice and skip swarm fan-out in Stage 2.
+## Phase 0: Workspace Setup (`factory-setup`)
 
----
+Follow [factory-setup](../factory-setup/SKILL.md):
+- Adopt or verify `.factory.json` and plugin hooks (`$FACTORY_CLI init` + `$FACTORY_CLI detect --cwd . --json`).
+- Enforce context hygiene: redirect verbose build/test output to `/tmp/*.log` and inspect only the tail on failures.
 
-## Stage 2: Isolated Parallel Swarm / Worktree Build
+## Phase 1: Intake & Edge-Case Interview (`factory-intake`)
 
-When Stage 1 yields multiple independent slices, execute them in isolated git worktrees with mechanical boundary enforcement:
+Follow [factory-intake](../factory-intake/SKILL.md):
+- Route the request by entry point (**New Project**, **Existing Repo**, **Bug Fix [Reproduce-First]**, **Feature/Behavior Change**, or **Refactor/Migration**).
+- Run a **read-only** `factory-architect` pass (Plan Mode or `research` subagent) paired with `/grill-me` (one question at a time) probing the **4-Part State & Edge-Case Matrix**:
+  1. Out-of-order & duplicate inputs (`X-Idempotency-Key`, replay guards)
+  2. Concurrency & race conditions (DB row locks `FOR UPDATE`, UI `AbortController`, monotonic counters)
+  3. Clock & timezone boundaries (UTC ISO-8601 at rest, explicit `as_of` cursors vs `now()`)
+  4. Dual-write & cross-service atomicity (commit ordering, stale edge deletion before `MERGE`/upsert)
+- Stop before implementation while blocking ambiguities remain.
 
-1. **Spawn isolated builders**:
-   - **In Antigravity (`swarm`)**: Add one worker per slice with `workspace: "share"` so each builder operates in its own isolated git worktree:
-     ```text
-     swarm{
-       action: "add",
-       name: "<slice-name>",
-       workspace: "share",
-       brief: "You own ONLY: <Owned Files>. Do NOT touch: <Forbidden Files>. Shared contracts: <Contracts>. Implement <Spec>, verify with `<Verification Command>`, and run `$FACTORY_CLI audit-diff --cwd . --allow-paths \"<Owned Files>\"` to prove slice boundary compliance. Report files changed and command output to @coordinator."
-     }
-     ```
-2. **Spawn an independent verifier**: Add a read-only `verifier` worker (`workspace: "inherit"` in Antigravity) tasked with executing Stage 3 and Stage 4 once slices land, or run Stages 3–4 directly after integrating all slices.
-3. **Wait & integrate cleanly**: In Antigravity, sleep via `swarm_wait` (never poll). As each builder reports green slice checks, audit and land its worktree using `$FACTORY_CLI land --worktree <worktree> --slice <slice-name>` (or `--allow-paths "<Owned Files>"`), verify zero cross-slice file overlap, and clean up the worker (`swarm{action: "kill", name: "<slice-name>"}` or `git worktree remove ../wt-<slice-name>`).
+## Phase 2: Contracts, Frozen Tests & Slice Plan (`factory-plan`)
 
----
+Follow [factory-plan](../factory-plan/SKILL.md):
+- Lock `SPEC.md`, API/DB contracts, `.env.example`, and `docker-compose.yml` with realistic service `healthcheck` definitions.
+- Write **Milestone 1.5 Frozen Adversarial Tests** (happy paths + all 4 edge-case matrix failures, protected under `holdout/` or frozen test paths) and confirm they fail as expected before implementation.
+- Partition multi-file builds into strictly disjoint slices in `.factory/spec.json` (`$FACTORY_CLI plan --init`). For 1–2 tightly coupled files, keep a single slice.
 
-## Stage 3: Deterministic QA & Browser Verification (`factory-qa-verifier`)
+## Phase 3: Isolated Execution (`factory-build`)
 
-Follow [factory-qa-verifier](../factory-qa-verifier/SKILL.md) on the integrated workspace:
+Follow [factory-build](../factory-build/SKILL.md):
+- **Single-slice / linear milestones**: Build directly in one agent using `/goal` (or `/boost` for tricky state/race bugs).
+- **Independent multi-slice builds**: Fan out `factory-builder` workers via Antigravity `swarm` with `workspace: "share"` (one worktree per slice, `FACTORY_SLICE=<slice>`), `/teamwork`, or `/run-workflow` (never assign concurrent writers to the same file).
+- Audit and integrate finished slices with `$FACTORY_CLI land --worktree <dir> --slice <slice>` before cleanup (`swarm{action: "kill", ...}`).
 
-1. **Run deterministic verification**:
-   ```bash
-   $FACTORY_CLI verify --cwd . --require-tests
-   ```
-2. **Audit check states & receipt**:
-   - Confirm `.factory/verify-receipt.json` exists with `"ok": true`.
-   - Inspect every check (`hygiene`, `docker-compose`, `lint`, `typecheck`, `test`, `build`).
-   - **Never treat `NOT_RUN` as `PASS`**. If runnable unit/integration tests are missing (`NOT_RUN`), author or wire tests before proceeding.
-3. **Live UI verification (web apps)**:
-   - Start the local dev server or Docker Compose stack (`docker compose up --build -d`), confirm health endpoints respond, and exercise end-to-end user flows (create, update, filter, delete, error states) and verify zero console/network errors using the `browser` subagent (Antigravity).
+## Phase 4: Verification, Review & Handoff
 
----
-
-## Stage 4: Diff Audit & Semantic Security Review (`factory-security-reviewer`)
-
-Follow [factory-security-reviewer](../factory-security-reviewer/SKILL.md) as a **strictly read-only** gate:
-
-1. **Run deterministic diff scan**:
-   ```bash
-   $FACTORY_CLI audit-diff --cwd .
-   ```
-2. **Perform independent semantic review**: Inspect `git status --short` and `git diff` for parameterized queries, input validation, auth boundaries, XSS safety, error handling, secret hygiene, and preserved documentation.
-3. **Gate on verdict**:
-   - **`CHANGES REQUESTED`**: Route exact `file:line` findings back to the owning builder (or apply minimal targeted fixes), then **re-run Stage 3 and Stage 4** so `.factory/verify-receipt.json` matches the final workspace digest.
-   - **`APPROVE`**: Summarize delivered slices, verification receipt results, browser QA coverage, and security review sign-off for the user.
-
-## Completion and native ownership
-
-Use Antigravity's native delegation, browser and permission mechanisms; do not implement a second agent runner. Before landing, run factory verification in each worker and retain a fresh receipt. Landing checks conflicts and verifies the integrated state; it does not commit or push. Review the combined diff after integration.
-
-Finish with `$FACTORY_CLI status --cwd . --json`. Report configured mechanical status separately from independent review and live UI coverage. For a session exhausted by stop reminders, report the unfinished requirements; never describe termination as success. Missing or stale required evidence needs actual reinspection, not an invented record.
+1. **QA & Live Browser Gate ([factory-verify](../factory-verify/SKILL.md))**:
+   - Run `$FACTORY_CLI verify --cwd . --require-tests` (`NOT_RUN` is never `PASS`).
+   - Confirm `.factory/verify-receipt.json` has `"ok": true`.
+   - When a web UI exists, boot the real stack, exercise live E2E flows via the `browser` subagent (`/browser`), confirm zero console/network errors, and record observed evidence (`$FACTORY_CLI evidence record --kind browser ...`).
+2. **Cold-Context Security & Code Review ([factory-review](../factory-review/SKILL.md))**:
+   - Capture `subjectDigest` and `policyDigest` from `$FACTORY_CLI status --cwd . --json`.
+   - Run `$FACTORY_CLI audit-diff --cwd .` and dispatch a fresh read-only `factory-reviewer` (`research` subagent) over `git diff`.
+   - Enforce **Reproduce Before Fixing**: write a failing regression test confirming any bug before applying a minimal patch, then re-run `factory-verify`.
+   - Record independent review outcome (`$FACTORY_CLI evidence record --kind review ...`).
+3. **Final Status & Delivery ([factory-status](../factory-status/SKILL.md))**:
+   - Run `$FACTORY_CLI status --cwd . --json` and present configured gate status separately from independent review and live browser coverage. Never describe stop-hook budget exhaustion as completion.

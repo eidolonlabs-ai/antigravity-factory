@@ -7,7 +7,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { detectProject } from '../plugins/antigravity-factory/lib/detect.js';
-import { runVerify, computeWorkspaceDigest } from '../plugins/antigravity-factory/lib/verify.js';
+import { runVerify, computeWorkspaceDigest, inspectComposeIsolation } from '../plugins/antigravity-factory/lib/verify.js';
 import { runAuditDiff, matchesAllowedPath } from '../plugins/antigravity-factory/lib/audit-diff.js';
 import { runInit } from '../plugins/antigravity-factory/lib/init.js';
 
@@ -795,4 +795,34 @@ test('matchesAllowedPath and runAuditDiff support zero-depth /**/ globs', async 
   });
   assert.equal(report.status, 'APPROVE_CANDIDATE');
   assert.equal(report.findings.length, 0);
+});
+
+test('inspectComposeIsolation accepts dynamic projects and flags collisions, privileged mode, and docker.sock', () => {
+  const clean = inspectComposeIsolation({
+    services: {
+      db: { image: 'postgres:16-alpine', volumes: ['pgdata:/var/lib/postgresql/data'] },
+      api: { image: 'node:20', ports: [{ published: '3101', target: 4000 }] },
+    },
+  });
+  assert.deepEqual(clean, []);
+
+  const dirty = inspectComposeIsolation({
+    services: {
+      db: { image: 'postgres:16-alpine', container_name: 'fixed-db' },
+      runner: {
+        image: 'alpine',
+        privileged: true,
+        volumes: ['/var/run/docker.sock:/var/run/docker.sock'],
+      },
+      sidecar: {
+        image: 'alpine',
+        volumes: [{ type: 'bind', source: '/run/docker.sock', target: '/var/run/docker.sock' }],
+      },
+    },
+  });
+  assert.equal(dirty.length, 4);
+  assert.ok(dirty.some((p) => p.includes('db: fixed container_name')));
+  assert.ok(dirty.some((p) => p.includes('runner: privileged containers')));
+  assert.ok(dirty.some((p) => p.includes('runner: mounting docker.sock')));
+  assert.ok(dirty.some((p) => p.includes('sidecar: mounting docker.sock')));
 });

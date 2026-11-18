@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const project = `factory-${crypto.randomUUID().slice(0, 12)}`;
+const project = `factory-agy-${crypto.randomUUID().slice(0, 12)}`;
 const artifacts = path.join(root, ".factory", project);
 fs.mkdirSync(artifacts, { recursive: true });
 const env = {

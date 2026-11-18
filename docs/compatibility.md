@@ -1,6 +1,6 @@
 # Antigravity compatibility
 
-Qualified locally on 2026-11-17 with `agy 1.5.9`: native strict loader validation discovers four skills, one rule and two hooks without findings. Direct hook subprocess tests cover documentation-derived `model_stop` and legacy `NO_TOOL_CALL` payloads, background work, cancellation, errors, bounded continuations and fresh verification. Fixture payloads are not recordings of live sessions.
+Qualified locally on 2026-11-17 with `agy 1.5.9`: the baseline strict loader validation discovered the initial four skills, one rule, and two hooks without findings. The current bundle ships 8 unified `factory-*` skills (`factory-pipeline`, `factory-setup`, `factory-intake`, `factory-plan`, `factory-build`, `factory-verify`, `factory-review`, `factory-status`), 3 role profiles (`roles/factory-{architect,builder,reviewer}.md`), 1 rule (`rules/AGENTS.md`), and 2 hooks (`PreToolUse`, `Stop`), requiring fresh `agy plugin validate` qualification on release. Direct hook subprocess tests cover documentation-derived `model_stop` and legacy `NO_TOOL_CALL` payloads, background work, cancellation, errors, bounded continuations and fresh verification. Fixture payloads are not recordings of live sessions.
 
 Native hooks run from the plugin root and use JSON decisions, not nonzero exit codes as blockers. Stop is a bounded reminder; errors in the host hook mechanism can fail open. Check the CLI status when mechanical completion is required.
 

@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tasks_password}
       POSTGRES_DB: ${POSTGRES_DB:-tasks_db}
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-54321}:5432"
     volumes:
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - pgdata:/var/lib/postgresql/data
@@ -22,7 +22,7 @@ services:
       PORT: 4000
       DATABASE_URL: postgres://${POSTGRES_USER:-tasks_user}:${POSTGRES_PASSWORD:-tasks_password}@db:5432/${POSTGRES_DB:-tasks_db}
     ports:
-      - "${API_PORT:-4000}:4000"
+      - "${API_PORT:-3101}:4000"
     depends_on:
       db:
         condition: service_healthy
@@ -30,7 +30,7 @@ services:
   web:
     build: ./web
     ports:
-      - "${WEB_PORT:-3000}:80"
+      - "${WEB_PORT:-3100}:80"
     depends_on:
       api:
         condition: service_started

@@ -53,6 +53,8 @@ try {
     "bin",
     "lib",
     "rules",
+    "roles",
+    "agents",
     "skills",
   ])
     copy(path.join(source, name), path.join(bundle, name));

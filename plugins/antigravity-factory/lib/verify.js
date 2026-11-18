@@ -258,6 +258,79 @@ function ensureNodeDependenciesIfNeeded(
   return null;
 }
 
+export function inspectComposeIsolation(resolvedModel) {
+  const problems = [];
+  const services = resolvedModel?.services;
+  if (!services || typeof services !== "object") return problems;
+  for (const [name, svc] of Object.entries(services)) {
+    if (!svc || typeof svc !== "object") continue;
+    if (svc.container_name) {
+      problems.push(`${name}: fixed container_name collides across parallel runs`);
+    }
+    if (svc.privileged) {
+      problems.push(`${name}: privileged containers are not allowed`);
+    }
+    for (const vol of Array.isArray(svc.volumes) ? svc.volumes : []) {
+      const src =
+        typeof vol === "string" ? vol.split(":")[0] : String(vol?.source || "");
+      if (src.includes("docker.sock")) {
+        problems.push(`${name}: mounting docker.sock is not allowed (${src})`);
+      }
+    }
+  }
+  return problems;
+}
+
+function runDockerComposeCheck(project, resolvedCwd, env) {
+  const cmd = "docker compose config --quiet";
+  const res = execShellCommand(cmd, resolvedCwd, 30_000, env);
+  if (!res.ok) {
+    return {
+      id: "docker-compose",
+      category: "docker-compose",
+      component: "workspace",
+      status: "FAIL",
+      command: cmd,
+      durationMs: res.durationMs,
+      output: res.output || "docker compose config failed.",
+    };
+  }
+  const jsonRes = execShellCommand(
+    "docker compose config --format json",
+    resolvedCwd,
+    30_000,
+    env,
+  );
+  if (jsonRes.ok && jsonRes.output) {
+    try {
+      const model = JSON.parse(jsonRes.output);
+      const problems = inspectComposeIsolation(model);
+      if (problems.length > 0) {
+        return {
+          id: "docker-compose",
+          category: "docker-compose",
+          component: "workspace",
+          status: "FAIL",
+          command: "docker compose config --format json",
+          durationMs: res.durationMs + jsonRes.durationMs,
+          output: `Compose isolation violation(s): ${problems.join("; ")}`,
+        };
+      }
+    } catch {
+      // Non-JSON compose output (e.g. legacy CLI or stub): syntax check already passed.
+    }
+  }
+  return {
+    id: "docker-compose",
+    category: "docker-compose",
+    component: "workspace",
+    status: "PASS",
+    command: cmd,
+    durationMs: res.durationMs,
+    output: res.output || `${project.dockerComposeFile} is valid.`,
+  };
+}
+
 /**
  * Runs deterministic workspace verification checks and writes `.factory/verify-receipt.json`.
  *
@@ -283,27 +356,13 @@ export function runVerify({
   // a) Hygiene check
   checks.push(runHygieneCheck(resolvedCwd));
 
-  // b) Optional Docker Compose syntax check
+  // b) Optional Docker Compose syntax & isolation check
   if (
     project.hasDockerCompose &&
     !skipDocker &&
     isDockerComposeAvailable(env)
   ) {
-    const cmd = "docker compose config --quiet";
-    const res = execShellCommand(cmd, resolvedCwd, 30_000, env);
-    checks.push({
-      id: "docker-compose",
-      category: "docker-compose",
-      component: "workspace",
-      status: res.ok ? "PASS" : "FAIL",
-      command: cmd,
-      durationMs: res.durationMs,
-      output:
-        res.output ||
-        (res.ok
-          ? `${project.dockerComposeFile} is valid.`
-          : "docker compose config failed."),
-    });
+    checks.push(runDockerComposeCheck(project, resolvedCwd, env));
   } else {
     checks.push({
       id: "docker-compose",

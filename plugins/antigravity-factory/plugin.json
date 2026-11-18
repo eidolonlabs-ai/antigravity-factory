@@ -11,13 +11,5 @@
     "Build a new feature end-to-end using the Antigravity Factory pipeline",
     "Run deterministic QA verification across all workspace components",
     "Audit the current git diff for security issues and regressions"
-  ],
-  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
-  "license": "MIT",
-  "keywords": [
-    "antigravity-factory",
-    "factory-engineering",
-    "verification",
-    "local-development"
   ]
 }
