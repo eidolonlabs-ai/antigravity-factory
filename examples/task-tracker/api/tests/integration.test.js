@@ -9,6 +9,7 @@ test("real PostgreSQL persists HTTP mutations and rejects invalid inputs", async
   );
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
   let id;
+  let completedId;
   try {
     assert.equal((await fetch(`${base}/health`)).status, 200);
     const created = await fetch(`${base}/api/tasks`, {
@@ -48,6 +49,23 @@ test("real PostgreSQL persists HTTP mutations and rejects invalid inputs", async
       ).status,
       400,
     );
+    const createdSecond = await fetch(`${base}/api/tasks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Completed task to clear" }),
+    });
+    assert.equal(createdSecond.status, 201);
+    completedId = (await createdSecond.json()).task.id;
+    assert.equal(
+      (
+        await fetch(`${base}/api/tasks/${completedId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ done: true }),
+        })
+      ).status,
+      200,
+    );
     assert.equal(
       (await fetch(`${base}/api/tasks/${id}`, { method: "DELETE" })).status,
       200,
@@ -56,8 +74,22 @@ test("real PostgreSQL persists HTTP mutations and rejects invalid inputs", async
       (await pool.query("SELECT id FROM tasks WHERE id=$1", [id])).rowCount,
       0,
     );
+    const clearCompletedRes = await fetch(`${base}/api/tasks/completed`, {
+      method: "DELETE",
+    });
+    assert.equal(clearCompletedRes.status, 200);
+    const clearCompletedBody = await clearCompletedRes.json();
+    assert.ok(clearCompletedBody.deletedCount >= 1);
+    assert.ok(clearCompletedBody.ids.includes(completedId));
+    assert.equal(
+      (await pool.query("SELECT id FROM tasks WHERE id=$1", [completedId]))
+        .rowCount,
+      0,
+    );
   } finally {
     if (id) await pool.query("DELETE FROM tasks WHERE id=$1", [id]);
+    if (completedId)
+      await pool.query("DELETE FROM tasks WHERE id=$1", [completedId]);
     await pool.end();
   }
 });

@@ -50,3 +50,23 @@ test("API failure is visible and can be dismissed", async ({ page }) => {
   await page.getByRole("button", { name: "Dismiss error" }).click();
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
+test("Clear completed button deletes completed tasks", async ({ page }) => {
+  const title = `Completed task ${Date.now()}`;
+  await page.goto("/");
+  await page.getByRole("textbox", { name: "New task title" }).fill(title);
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  const row = page.getByRole("listitem").filter({ hasText: title });
+  await expect(row).toBeVisible();
+  await row.getByRole("checkbox").click();
+  await expect(row.getByRole("checkbox")).toBeChecked();
+  const clearBtn = page.getByRole("button", { name: "Clear completed", exact: true });
+  await expect(clearBtn).toBeVisible();
+  const clearResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "DELETE" &&
+      response.url().includes("/api/tasks/completed"),
+  );
+  await clearBtn.click();
+  await (await clearResponse).finished();
+  await expect(row).toHaveCount(0);
+});

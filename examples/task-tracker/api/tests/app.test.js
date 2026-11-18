@@ -61,6 +61,12 @@ function createMockPool() {
         return { rows: [{ ...task }] };
       }
 
+      if (normalized === "DELETE FROM tasks WHERE done = TRUE RETURNING id") {
+        const removed = tasks.filter((t) => t.done === true);
+        tasks = tasks.filter((t) => t.done !== true);
+        return { rows: removed.map((t) => ({ id: t.id })) };
+      }
+
       if (normalized.startsWith("DELETE FROM tasks WHERE id = $1")) {
         const id = params[0];
         const idx = tasks.findIndex((t) => t.id === id);
@@ -214,5 +220,29 @@ describe("Tasks API", () => {
 
     const badIdRes = await fetch(`${baseUrl}/api/tasks/0`, { method: "DELETE" });
     assert.equal(badIdRes.status, 400);
+  });
+
+  it("DELETE /api/tasks/completed removes only completed tasks and returns deletedCount and ids", async () => {
+    pool.seed([
+      { id: 1, title: "Active task", done: false, created_at: "2026-01-01T00:00:00.000Z" },
+      { id: 2, title: "Done task 1", done: true, created_at: "2026-01-02T00:00:00.000Z" },
+      { id: 3, title: "Done task 2", done: true, created_at: "2026-01-03T00:00:00.000Z" },
+    ]);
+
+    const clearRes = await fetch(`${baseUrl}/api/tasks/completed`, { method: "DELETE" });
+    assert.equal(clearRes.status, 200);
+    const clearBody = await clearRes.json();
+    assert.deepEqual(clearBody, { deletedCount: 2, ids: [2, 3] });
+
+    const listRes = await fetch(`${baseUrl}/api/tasks`);
+    assert.equal(listRes.status, 200);
+    const listBody = await listRes.json();
+    assert.equal(listBody.tasks.length, 1);
+    assert.equal(listBody.tasks[0].id, 1);
+
+    const emptyClearRes = await fetch(`${baseUrl}/api/tasks/completed`, { method: "DELETE" });
+    assert.equal(emptyClearRes.status, 200);
+    const emptyClearBody = await emptyClearRes.json();
+    assert.deepEqual(emptyClearBody, { deletedCount: 0, ids: [] });
   });
 });

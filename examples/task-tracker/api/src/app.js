@@ -137,6 +137,20 @@ export function createApp(pool) {
     }
   });
 
+  app.delete("/api/tasks/completed", async (_req, res) => {
+    try {
+      const result = await pool.query(
+        "DELETE FROM tasks WHERE done = TRUE RETURNING id"
+      );
+      return res.status(200).json({
+        deletedCount: result.rows.length,
+        ids: result.rows.map((r) => r.id),
+      });
+    } catch (err) {
+      return res.status(500).json({ error: "Failed to clear completed tasks" });
+    }
+  });
+
   app.delete("/api/tasks/:id", async (req, res) => {
     const id = parseTaskId(req.params.id);
     if (id === null) {

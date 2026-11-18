@@ -117,7 +117,23 @@ export default function App() {
     }
   }
 
+  async function handleClearCompleted() {
+    setError('');
+    try {
+      const res = await fetch('/api/tasks/completed', {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        throw new Error(await parseErrorMessage(res, 'Failed to clear completed tasks'));
+      }
+      setTasks((prev) => prev.filter((t) => !t.done));
+    } catch (err) {
+      setError(err.message || 'Failed to clear completed tasks');
+    }
+  }
+
   const remainingCount = tasks.filter((t) => !t.done).length;
+  const completedCount = tasks.filter((t) => t.done).length;
   const filteredTasks = tasks.filter((t) => {
     if (filter === 'Active') return !t.done;
     if (filter === 'Done') return t.done;
@@ -183,6 +199,15 @@ export default function App() {
           <span className="remaining-count">
             {remainingCount} {remainingCount === 1 ? 'task' : 'tasks'} left
           </span>
+          {completedCount > 0 && (
+            <button
+              type="button"
+              className="clear-completed-button"
+              onClick={handleClearCompleted}
+            >
+              Clear completed
+            </button>
+          )}
         </div>
 
         {loading ? (
