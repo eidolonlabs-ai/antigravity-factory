@@ -55,23 +55,46 @@ try {
     env,
     stdio: "pipe",
   });
-  for (const hook of ["pre-tool-guard", "stop-verify-gate"]) {
+  const hookChecks = [
+    {
+      hook: "pre-tool-guard",
+      payload: {
+        workspacePaths: [project],
+        toolCall: { name: "write_file", args: { Path: path.join(project, ".env") } },
+      },
+      expect: "deny",
+    },
+    {
+      hook: "pre-tool-guard",
+      payload: {
+        workspacePaths: [project],
+        toolCall: { name: "run_command", args: { CommandLine: "npm test" } },
+      },
+      expect: "allow",
+    },
+    {
+      hook: "stop-verify-gate",
+      payload: {
+        workspacePaths: [project],
+        fullyIdle: true,
+        terminationReason: "model_stop",
+      },
+      expect: "allow",
+    },
+  ];
+  for (const { hook, payload, expect: expectedDecision } of hookChecks) {
     const r = spawnSync(
       process.execPath,
       [path.join(bundle, "bin", `${hook}.js`)],
       {
         cwd: bundle,
         env,
-        input: JSON.stringify({
-          workspacePaths: [project],
-          fullyIdle: true,
-          terminationReason: "model_stop",
-        }),
+        input: JSON.stringify(payload),
         encoding: "utf8",
       },
     );
-    if (r.status !== 0 || JSON.parse(r.stdout).decision !== "allow")
-      throw new Error(`Hook smoke failed: ${hook}`);
+    if (r.status !== 0 || JSON.parse(r.stdout).decision !== expectedDecision)
+      throw new Error(`Hook smoke failed: ${hook} (expected ${expectedDecision})`);
   }
   if (process.argv.includes("--native"))
     execFileSync("agy", ["plugin", "validate", bundle, "--strict", "--json"], {

@@ -16,23 +16,23 @@ Clarify intent, edge cases, and entry-point requirements **before** planning fil
 
 ## Mandatory Spec Sufficiency Check
 
-Before proposing a plan, audit the owner's input against the Entry Point's minimum requirements (`docs/entry-paths.md`) and the **4-Part State & Edge-Case Matrix**. Push back and refuse to move to `factory-plan` if any of these are missing:
+Before proposing a plan, audit the owner's input against the Entry Point's minimum requirements ([references/entry-paths.md](./references/entry-paths.md)) and the **4-Part State & Edge-Case Matrix**. Push back and refuse to move to `factory-plan` if any of these are missing:
 - Observable user/API outcomes and explicit error/failure behavior.
 - Minimum entry-point inputs (e.g. reproduction steps for bug fixes, schema/compatibility bounds for features, baseline test commands for brownfield repos, invariant checks for refactors).
 - Applicable 4-Part Edge-Case resolutions (out-of-order/duplicate inputs, concurrency/locks, UTC/`as_of` clock boundaries, dual-write atomicity).
 
 ## Step 1: Route by Entry Point
 
-Identify which of the five developer starting points applies (see `docs/entry-paths.md`):
+Identify which of the five developer starting points applies (see [references/entry-paths.md](./references/entry-paths.md)):
 1. **New / Greenfield App**: Gather intended users, core journeys, stack constraints, and any handoff spec.
-2. **Existing / Brownfield Repo**: Inventory with `$FACTORY_CLI detect --cwd . --json`, capture conventions, test commands, and preexisting baseline failures.
+2. **Existing / Brownfield Repo**: Inventory with `$FACTORY_CLI detect --cwd . --json` (resolve `FACTORY_CLI` as `node ./bin/agy-factory.js`, `node ./.agents/plugins/antigravity-factory/bin/agy-factory.js`, or `node ../../bin/agy-factory.js` relative to this skill), capture conventions, test commands, and preexisting baseline failures.
 3. **Bug Fix (Reproduce-First)**: Record expected vs. actual behavior, reproduction steps, environment, and stack traces; require a failing regression test before fixing.
 4. **Feature or Behavior Change**: Anchor to existing exemplar files, API/DB compatibility constraints, and behaviors that must remain unchanged.
 5. **Large-Scale Refactor or Migration**: Capture source/target transformation rules, invariant guarantees, and per-slice verification oracles.
 
 ## Step 2: Read-Only `factory-architect` Pass & `/grill-me`
 
-- For complex or contradictory specs (including the ChronoGraph benchmark `benchmarks/chronograph/input/original.md`), launch a fresh read-only `research` subagent with the `factory-architect` role (`../../roles/factory-architect.md`) and **only** the source document—never evaluator rubrics or prior diagnoses.
+- For complex or contradictory specs (including the ChronoGraph benchmark `benchmarks/chronograph/input/original.md`), launch a fresh read-only `research` subagent with the `factory-architect` agent (`../../agents/factory-architect.md`) and **only** the source document—never evaluator rubrics or prior diagnoses.
 - Conduct the owner interview **one question at a time** (matching `/grill-me` style), prioritizing blocking ambiguities first.
 
 ## Step 3: Probe the 4-Part State & Edge-Case Matrix

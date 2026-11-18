@@ -826,3 +826,151 @@ test('inspectComposeIsolation accepts dynamic projects and flags collisions, pri
   assert.ok(dirty.some((p) => p.includes('runner: mounting docker.sock')));
   assert.ok(dirty.some((p) => p.includes('sidecar: mounting docker.sock')));
 });
+
+test('audit-diff, spec overlap/glob separation, polyglot plan init, formatters, and detect --format json', async (t) => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const os = await import('node:os');
+  const { execFileSync } = await import('node:child_process');
+  const { pathToFileURL } = await import('node:url');
+
+  const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+  const { validateFactorySpec, runPlan } = await import(
+    pathToFileURL(path.join(repoRoot, 'plugins/antigravity-factory/lib/spec.js')).href
+  );
+  const { formatAuditSarif } = await import(
+    pathToFileURL(path.join(repoRoot, 'plugins/antigravity-factory/lib/formatters.js')).href
+  );
+  const { runCli } = await import(
+    pathToFileURL(path.join(repoRoot, 'plugins/antigravity-factory/bin/agy-factory.js')).href
+  );
+
+  // 1. matchesAllowedPath distinguishes api/* vs api/** and validateFactorySpec catches overlaps
+  assert.equal(matchesAllowedPath('api/index.js', ['api/*']), true);
+  assert.equal(matchesAllowedPath('api/routes/users.js', ['api/*']), false);
+  assert.equal(matchesAllowedPath('api/routes/users.js', ['api/**']), true);
+
+  for (const [sliceA, sliceB] of [
+    [['**/*.js'], ['src/*.js']],
+    [['src/**/*.js'], ['src/sub/*.js']],
+    [['api/**/*.js'], ['api/routes/*.js']],
+  ]) {
+    const err = validateFactorySpec({
+      schemaVersion: 1,
+      slices: {
+        a: { allowPaths: sliceA },
+        b: { allowPaths: sliceB },
+      },
+    });
+    assert.ok(
+      !err.valid && err.errors.some((e) => /overlap/i.test(e)),
+      `Expected overlap between ${sliceA} and ${sliceB}, got ${JSON.stringify(err)}`
+    );
+  }
+
+  // 2. runPlan --init merges polyglot slices (api/package.json + api/pyproject.toml, plus web/package.json)
+  const polyDir = createTempDir(t);
+  fs.mkdirSync(path.join(polyDir, 'api', 'tests'), { recursive: true });
+  fs.mkdirSync(path.join(polyDir, 'web'), { recursive: true });
+  writeJson(path.join(polyDir, 'api', 'package.json'), {
+    name: 'api-node',
+    scripts: { test: 'node -e "process.exit(0)"' },
+  });
+  fs.writeFileSync(path.join(polyDir, 'api', 'pyproject.toml'), '[project]\nname="api-py"\n');
+  fs.writeFileSync(path.join(polyDir, 'api', 'tests', 'test_api.py'), 'import unittest\n');
+  writeJson(path.join(polyDir, 'web', 'package.json'), {
+    name: 'web-app',
+    scripts: { test: 'node -e "process.exit(0)"' },
+  });
+  const planRes = runPlan({ cwd: polyDir, init: true });
+  assert.ok(planRes.spec.slices && Object.keys(planRes.spec.slices).length >= 2);
+  assert.match(planRes.spec.slices.api.description, /node/i);
+  assert.match(planRes.spec.slices.api.description, /python/i);
+
+  // 3. detect --format json & rejected extra positional arg
+  let stdout = '';
+  let stderr = '';
+  const detectCode = await runCli(['detect', '--cwd', polyDir, '--format', 'json'], {
+    stdout: {
+      write: (s) => {
+        stdout += s;
+      },
+    },
+    stderr: {
+      write: (s) => {
+        stderr += s;
+      },
+    },
+  });
+  assert.equal(detectCode, 0, stderr);
+  const detected = JSON.parse(stdout);
+  assert.ok(Array.isArray(detected.components));
+
+  const badCode = await runCli(['detect', '--cwd', polyDir, 'extra-arg'], {
+    stdout: { write: () => {} },
+    stderr: {
+      write: (s) => {
+        stderr += s;
+      },
+    },
+  });
+  assert.equal(badCode, 1);
+
+  // 4. formatAuditSarif uses plugin.json version
+  const pluginManifest = JSON.parse(
+    fs.readFileSync(path.join(repoRoot, 'plugins/antigravity-factory/plugin.json'), 'utf8')
+  );
+  const sarif = JSON.parse(
+    formatAuditSarif({
+      ok: true,
+      cwd: polyDir,
+      changedFiles: [],
+      findings: [],
+      outOfSliceFiles: [],
+    })
+  );
+  assert.equal(sarif.runs[0].tool.driver.version, pluginManifest.version);
+
+  // 5. runAuditDiff: invalid --cwd, invalid --base, deleted out-of-slice file, placeholder vs non-placeholder secret
+  const missingDir = path.join(os.tmpdir(), `agy-missing-${Date.now()}`);
+  assert.throws(() => runAuditDiff({ cwd: missingDir }));
+
+  const auditDir = createTempDir(t);
+  execFileSync('git', ['init', '-q'], { cwd: auditDir });
+  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: auditDir });
+  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: auditDir });
+  fs.mkdirSync(path.join(auditDir, 'api'), { recursive: true });
+  fs.mkdirSync(path.join(auditDir, 'web'), { recursive: true });
+  fs.writeFileSync(path.join(auditDir, 'api', 'index.js'), 'export const ok = 1;\n');
+  fs.writeFileSync(path.join(auditDir, 'web', 'app.js'), 'export const app = 1;\n');
+  execFileSync('git', ['add', '.'], { cwd: auditDir });
+  execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: auditDir });
+
+  assert.throws(() => runAuditDiff({ cwd: auditDir, base: 'nonexistent-ref-xyz' }));
+
+  execFileSync('git', ['rm', '-q', 'web/app.js'], { cwd: auditDir });
+  fs.writeFileSync(
+    path.join(auditDir, 'api', 'safe.js'),
+    'export const api_' + 'key = "test_secret_123";\n'
+  );
+  const safeRes = runAuditDiff({ cwd: auditDir, allowPaths: ['api/**'] });
+  assert.ok(
+    safeRes.findings.some(
+      (f) => f.rule === 'slice-boundary-violation' && f.file === 'web/app.js'
+    )
+  );
+  assert.equal(
+    safeRes.findings.some((f) => f.rule === 'hardcoded-secret' && f.file === 'api/safe.js'),
+    false
+  );
+
+  fs.writeFileSync(
+    path.join(auditDir, 'api', 'leak.js'),
+    'export const api_' + 'key = "latest_prod_secret_9f8a";\n'
+  );
+  const leakRes = runAuditDiff({ cwd: auditDir, allowPaths: ['api/**'] });
+  assert.ok(
+    leakRes.findings.some((f) => f.rule === 'hardcoded-secret' && f.file === 'api/leak.js'),
+    `Expected hardcoded-secret finding on api/leak.js, got ${JSON.stringify(leakRes.findings)}`
+  );
+});

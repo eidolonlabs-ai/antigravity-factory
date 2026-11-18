@@ -33,12 +33,6 @@ export function loadFactorySpec(cwd = process.cwd()) {
   return { specPath, spec: parsed };
 }
 
-function normalizePrefixForOverlap(pattern) {
-  const clean = pattern.replace(/\\/g, '/').replace(/^\.\//, '');
-  if (clean === '.' || clean === '*' || clean === '**') return '';
-  return clean.replace(/\/\*+$/, '').replace(/\/+$/, '');
-}
-
 export function globToRegExp(globPattern) {
   let regexStr = '^';
   for (let i = 0; i < globPattern.length; i += 1) {
@@ -75,11 +69,12 @@ export function matchesAllowedPath(relPath, allowedPatterns) {
     if (rawPattern === '.' || rawPattern === '*' || rawPattern === '**') {
       return true;
     }
-    if (rawPattern.endsWith('/**') || rawPattern.endsWith('/*')) {
+    if (rawPattern.endsWith('/**')) {
       const prefix = rawPattern.replace(/\/\*+$/, '').replace(/\/+$/, '');
       if (normFile === prefix || normFile.startsWith(`${prefix}/`)) {
         return true;
       }
+      continue;
     }
     if (rawPattern.includes('*') || rawPattern.includes('?')) {
       if (globToRegExp(rawPattern).test(normFile)) {
@@ -100,26 +95,28 @@ function hasWildcard(str) {
 }
 
 function segmentsCanOverlap(segA, segB) {
-  if (!hasWildcard(segA) && !hasWildcard(segB)) {
-    return segA === segB;
+  const normA = segA.replace(/\*\*+/g, '*');
+  const normB = segB.replace(/\*\*+/g, '*');
+  if (!hasWildcard(normA) && !hasWildcard(normB)) {
+    return normA === normB;
   }
-  const reA = globToRegExp(segA);
-  const reB = globToRegExp(segB);
-  if (!hasWildcard(segA)) return reB.test(segA);
-  if (!hasWildcard(segB)) return reA.test(segB);
+  const reA = globToRegExp(normA);
+  const reB = globToRegExp(normB);
+  if (!hasWildcard(normA)) return reB.test(normA);
+  if (!hasWildcard(normB)) return reA.test(normB);
 
-  const firstWildA = segA.search(/[*?]/);
-  const firstWildB = segB.search(/[*?]/);
-  const prefA = segA.slice(0, firstWildA);
-  const prefB = segB.slice(0, firstWildB);
+  const firstWildA = normA.search(/[*?]/);
+  const firstWildB = normB.search(/[*?]/);
+  const prefA = normA.slice(0, firstWildA);
+  const prefB = normB.slice(0, firstWildB);
   if (!prefA.startsWith(prefB) && !prefB.startsWith(prefA)) {
     return false;
   }
 
-  const lastWildA = Math.max(segA.lastIndexOf('*'), segA.lastIndexOf('?'));
-  const lastWildB = Math.max(segB.lastIndexOf('*'), segB.lastIndexOf('?'));
-  const sufA = segA.slice(lastWildA + 1);
-  const sufB = segB.slice(lastWildB + 1);
+  const lastWildA = Math.max(normA.lastIndexOf('*'), normA.lastIndexOf('?'));
+  const lastWildB = Math.max(normB.lastIndexOf('*'), normB.lastIndexOf('?'));
+  const sufA = normA.slice(lastWildA + 1);
+  const sufB = normB.slice(lastWildB + 1);
   if (!sufA.endsWith(sufB) && !sufB.endsWith(sufA)) {
     return false;
   }
@@ -130,79 +127,69 @@ function segmentsCanOverlap(segA, segB) {
     `${longerPref}${longerSuf}`,
     `${longerPref}x${longerSuf}`,
     `${longerPref}xx${longerSuf}`,
+    normA.replace(/\*/g, '').replace(/\?/g, 'x'),
+    normB.replace(/\*/g, '').replace(/\?/g, 'x'),
   ];
   return (
     candidates.some((c) => reA.test(c) && reB.test(c)) ||
-    (segA.includes('*') && segB.includes('*'))
+    (normA.includes('*') && normB.includes('*'))
   );
 }
 
+function compilePatternAlternatives(rawPattern) {
+  const clean = String(rawPattern)
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '')
+    .replace(/\/+$/, '');
+  if (!clean) return [];
+  if (clean === '.' || clean === '*' || clean === '**') {
+    return [['**']];
+  }
+  if (clean.endsWith('/**')) {
+    const prefix = clean.slice(0, -3).replace(/\/+$/, '');
+    if (!prefix) return [['**']];
+    const parts = prefix.split('/').filter(Boolean);
+    return [parts, [...parts, '**']];
+  }
+  if (!hasWildcard(clean)) {
+    const parts = clean.split('/').filter(Boolean);
+    return [parts, [...parts, '**']];
+  }
+  return [clean.split('/').filter(Boolean)];
+}
+
+function segmentListsIntersect(segsA, segsB) {
+  const memo = new Map();
+  const dp = (i, j) => {
+    const key = `${i},${j}`;
+    if (memo.has(key)) return memo.get(key);
+    let result = false;
+    if (i === segsA.length && j === segsB.length) {
+      result = true;
+    } else if (i < segsA.length && segsA[i] === '**') {
+      result = dp(i + 1, j) || (j < segsB.length && dp(i, j + 1));
+    } else if (j < segsB.length && segsB[j] === '**') {
+      result = dp(i, j + 1) || (i < segsA.length && dp(i + 1, j));
+    } else if (i < segsA.length && j < segsB.length) {
+      result = segmentsCanOverlap(segsA[i], segsB[j]) && dp(i + 1, j + 1);
+    }
+    memo.set(key, result);
+    return result;
+  };
+  return dp(0, 0);
+}
+
 function patternsOverlap(patA, patB) {
-  if (patA === patB) return true;
-  const cleanA = patA.replace(/\/+$/, '');
-  const cleanB = patB.replace(/\/+$/, '');
-  if (cleanA === cleanB) return true;
-
-  if (!hasWildcard(cleanA) && !hasWildcard(cleanB)) {
-    return (
-      cleanA.startsWith(`${cleanB}/`) || cleanB.startsWith(`${cleanA}/`)
-    );
-  }
-
-  const hasWildcardSuffixA =
-    cleanA.endsWith('/*') ||
-    cleanA.endsWith('/**') ||
-    cleanA === '*' ||
-    cleanA === '**';
-  const hasWildcardSuffixB =
-    cleanB.endsWith('/*') ||
-    cleanB.endsWith('/**') ||
-    cleanB === '*' ||
-    cleanB === '**';
-  const prefA = normalizePrefixForOverlap(cleanA);
-  const prefB = normalizePrefixForOverlap(cleanB);
-
-  if (
-    (hasWildcardSuffixA && prefA === '') ||
-    (hasWildcardSuffixB && prefB === '')
-  ) {
-    return true;
-  }
-  if (prefA === prefB && (hasWildcardSuffixA || hasWildcardSuffixB)) {
-    return true;
-  }
-  if (hasWildcardSuffixA && prefB.startsWith(`${prefA}/`)) return true;
-  if (hasWildcardSuffixB && prefA.startsWith(`${prefB}/`)) return true;
-
-  // Directory prefix vs mid-segment/extension glob inside that directory (e.g. "src" vs "src/*.js")
-  if (!hasWildcard(cleanA) && cleanB.startsWith(`${cleanA}/`)) return true;
-  if (!hasWildcard(cleanB) && cleanA.startsWith(`${cleanB}/`)) return true;
-
-  const reA = globToRegExp(cleanA);
-  const reB = globToRegExp(cleanB);
-  if (!hasWildcard(cleanA) && reB.test(cleanA)) return true;
-  if (!hasWildcard(cleanB) && reA.test(cleanB)) return true;
-
-  // Recursive "**" glob vs another glob (e.g. "**/*.test.js" vs "api/**" or "api/*.test.js")
-  if (cleanA.includes('**') || cleanB.includes('**')) {
-    const samplePaths = [
-      `${prefA || 'dir'}/${(cleanB.split('/').pop() || 'file').replace(/\*\*/g, 'x').replace(/\*/g, 'x').replace(/\?/g, 'x')}`,
-      `${prefB || 'dir'}/${(cleanA.split('/').pop() || 'file').replace(/\*\*/g, 'x').replace(/\*/g, 'x').replace(/\?/g, 'x')}`,
-    ];
-    if (samplePaths.some((s) => reA.test(s) && reB.test(s))) {
-      return true;
+  const altsA = compilePatternAlternatives(patA);
+  const altsB = compilePatternAlternatives(patB);
+  for (const segsA of altsA) {
+    for (const segsB of altsB) {
+      if (segmentListsIntersect(segsA, segsB)) {
+        return true;
+      }
     }
   }
-
-  // Segment-by-segment glob intersection (e.g. "src/*.js" vs "src/app.*" or "src/*.ts")
-  if (!cleanA.includes('**') && !cleanB.includes('**')) {
-    const segsA = cleanA.split('/');
-    const segsB = cleanB.split('/');
-    if (segsA.length === segsB.length) {
-      return segsA.every((sA, idx) => segmentsCanOverlap(sA, segsB[idx]));
-    }
-  }
-
   return false;
 }
 
@@ -309,11 +296,22 @@ export function runPlan({
       if (childComps.length > 0) {
         for (const comp of childComps) {
           const sliceKey = comp.relPath.replace(/[^A-Za-z0-9_-]/g, '-');
-          slices[sliceKey] = {
-            description: `${comp.name} (${comp.type}) slice`,
-            allowPaths: [`${comp.relPath}/**`],
-            verifyCommand: comp.commands?.test || comp.commands?.build || null,
-          };
+          const cmd = comp.commands?.test || comp.commands?.build || null;
+          if (slices[sliceKey]) {
+            const existing = slices[sliceKey];
+            existing.description = `${existing.description} + ${comp.name} (${comp.type})`;
+            if (cmd && existing.verifyCommand && existing.verifyCommand !== cmd) {
+              existing.verifyCommand = `${existing.verifyCommand} && ${cmd}`;
+            } else if (cmd && !existing.verifyCommand) {
+              existing.verifyCommand = cmd;
+            }
+          } else {
+            slices[sliceKey] = {
+              description: `${comp.name} (${comp.type}) slice`,
+              allowPaths: [`${comp.relPath}/**`],
+              verifyCommand: cmd,
+            };
+          }
         }
       } else {
         slices.core = {

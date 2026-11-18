@@ -95,12 +95,21 @@ function collectWorktreeChanges(worktreeDir, baseSha = null) {
     );
     if (untrackedRes.status !== 0)
       throw new Error("Cannot enumerate untracked worker files");
+    const untrackedSet = new Set();
     if (untrackedRes.stdout) {
       for (const rawPath of untrackedRes.stdout.split("\0")) {
         if (!rawPath) continue;
         const relPath = rawPath.replace(/\\/g, "/");
         if (isFactoryPath(relPath)) continue;
+        untrackedSet.add(relPath);
         modifiedOrAdded.push(relPath);
+      }
+    }
+    if (untrackedSet.size > 0) {
+      for (let i = deleted.length - 1; i >= 0; i -= 1) {
+        if (untrackedSet.has(deleted[i])) {
+          deleted.splice(i, 1);
+        }
       }
     }
   } else {
@@ -217,22 +226,6 @@ export function runLand({
     }
   }
 
-  if (
-    audit.findings.some((f) => f.rule === "slice-boundary-violation") ||
-    (audit.status === "FLAGGED" && !force)
-  ) {
-    return {
-      ok: false,
-      dryRun: Boolean(dryRun),
-      worktree: resolvedWorktree,
-      targetDir: resolvedCwd,
-      allowPaths: effectiveAllowPaths,
-      landedFiles: [],
-      deletedFiles: [],
-      audit,
-    };
-  }
-
   const realWorktree = fs.realpathSync(resolvedWorktree);
   const realCwd = fs.realpathSync(resolvedCwd);
   const report = {
@@ -250,6 +243,13 @@ export function runLand({
     rollbackConflicts: [],
     requiresReview: true,
   };
+
+  if (
+    audit.findings.some((f) => f.rule === "slice-boundary-violation") ||
+    (audit.status === "FLAGGED" && !force)
+  ) {
+    return report;
+  }
   if (realWorktree === realCwd) {
     report.conflicts.push("Source and target must differ");
     return report;
@@ -303,6 +303,11 @@ export function runLand({
   let handle;
   try {
     handle = fs.openSync(lock, "wx", 0o600);
+    fs.writeFileSync(
+      handle,
+      JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }) + "\n",
+      "utf8",
+    );
   } catch {
     report.conflicts.push(
       "Another landing holds .factory/land.lock; inspect before manual recovery",

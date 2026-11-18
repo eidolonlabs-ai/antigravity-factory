@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 /** Safe environment template basenames that remain writable. */
@@ -141,6 +142,139 @@ export function unquoteShellToken(token) {
   return out;
 }
 
+function scanBacktick(str, startIdx) {
+  let j = startIdx + 1;
+  let body = "";
+  while (j < str.length) {
+    const ch = str[j];
+    if (ch === "\\" && j + 1 < str.length) {
+      body += str[j + 1];
+      j += 2;
+      continue;
+    }
+    if (ch === "`") {
+      return { endIdx: j, body };
+    }
+    body += ch;
+    j += 1;
+  }
+  return { endIdx: str.length - 1, body };
+}
+
+function scanCommandSubst(str, startIdx) {
+  let j = startIdx + 2;
+  let depth = 1;
+  let inSingle = false;
+  let inDouble = false;
+
+  while (j < str.length && depth > 0) {
+    const ch = str[j];
+    if (inSingle) {
+      if (ch === "'") inSingle = false;
+      j += 1;
+      continue;
+    }
+    if (ch === "\\" && j + 1 < str.length) {
+      j += 2;
+      continue;
+    }
+    if (inDouble) {
+      if (ch === "$" && str[j + 1] === "(") {
+        const nested = scanCommandSubst(str, j);
+        j = nested.endIdx + 1;
+        continue;
+      }
+      if (ch === "`") {
+        const bt = scanBacktick(str, j);
+        j = bt.endIdx + 1;
+        continue;
+      }
+      if (ch === '"') inDouble = false;
+      j += 1;
+      continue;
+    }
+    if (ch === "'") {
+      inSingle = true;
+    } else if (ch === '"') {
+      inDouble = true;
+    } else if (ch === "`") {
+      const bt = scanBacktick(str, j);
+      j = bt.endIdx + 1;
+      continue;
+    } else if (ch === "$" && str[j + 1] === "(") {
+      const nested = scanCommandSubst(str, j);
+      j = nested.endIdx + 1;
+      continue;
+    } else if (ch === "(") {
+      depth += 1;
+    } else if (ch === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return { endIdx: j, body: str.slice(startIdx + 2, j) };
+      }
+    }
+    j += 1;
+  }
+  return { endIdx: str.length - 1, body: str.slice(startIdx + 2) };
+}
+
+function scanBalancedGroup(str, startIdx, openChar, closeChar) {
+  let j = startIdx + 1;
+  let depth = 1;
+  let inSingle = false;
+  let inDouble = false;
+
+  while (j < str.length && depth > 0) {
+    const ch = str[j];
+    if (inSingle) {
+      if (ch === "'") inSingle = false;
+      j += 1;
+      continue;
+    }
+    if (ch === "\\" && j + 1 < str.length) {
+      j += 2;
+      continue;
+    }
+    if (inDouble) {
+      if (ch === "$" && str[j + 1] === "(") {
+        const nested = scanCommandSubst(str, j);
+        j = nested.endIdx + 1;
+        continue;
+      }
+      if (ch === "`") {
+        const bt = scanBacktick(str, j);
+        j = bt.endIdx + 1;
+        continue;
+      }
+      if (ch === '"') inDouble = false;
+      j += 1;
+      continue;
+    }
+    if (ch === "'") {
+      inSingle = true;
+    } else if (ch === '"') {
+      inDouble = true;
+    } else if (ch === "`") {
+      const bt = scanBacktick(str, j);
+      j = bt.endIdx + 1;
+      continue;
+    } else if (ch === "$" && str[j + 1] === "(") {
+      const nested = scanCommandSubst(str, j);
+      j = nested.endIdx + 1;
+      continue;
+    } else if (ch === openChar) {
+      depth += 1;
+    } else if (ch === closeChar) {
+      depth -= 1;
+      if (depth === 0) {
+        return { endIdx: j, closed: true };
+      }
+    }
+    j += 1;
+  }
+  return { endIdx: str.length - 1, closed: false };
+}
+
 /**
  * Tokenize a single shell segment respecting quotes, escapes, and $(...)/`...` spans.
  */
@@ -149,8 +283,6 @@ export function tokenizeShellSegment(segment) {
   let current = "";
   let inSingle = false;
   let inDouble = false;
-  let inBacktick = false;
-  let substDepth = 0;
 
   for (let i = 0; i < segment.length; i += 1) {
     const ch = segment[i];
@@ -165,29 +297,20 @@ export function tokenizeShellSegment(segment) {
       continue;
     }
     if (inDouble) {
-      current += ch;
       if (ch === "$" && segment[i + 1] === "(") {
-        substDepth += 1;
-        current += "(";
-        i += 1;
-      } else if (substDepth > 0 && ch === ")") {
-        substDepth -= 1;
-      } else if (ch === "`") {
-        inBacktick = !inBacktick;
-      } else if (ch === '"' && substDepth === 0 && !inBacktick) {
-        inDouble = false;
+        const sub = scanCommandSubst(segment, i);
+        current += segment.slice(i, sub.endIdx + 1);
+        i = sub.endIdx;
+        continue;
       }
-      continue;
-    }
-    if (inBacktick) {
+      if (ch === "`") {
+        const bt = scanBacktick(segment, i);
+        current += segment.slice(i, bt.endIdx + 1);
+        i = bt.endIdx;
+        continue;
+      }
       current += ch;
-      if (ch === "`") inBacktick = false;
-      continue;
-    }
-    if (substDepth > 0) {
-      current += ch;
-      if (ch === "(") substDepth += 1;
-      else if (ch === ")") substDepth -= 1;
+      if (ch === '"') inDouble = false;
       continue;
     }
     if (ch === "'") {
@@ -197,12 +320,13 @@ export function tokenizeShellSegment(segment) {
       inDouble = true;
       current += ch;
     } else if (ch === "`") {
-      inBacktick = true;
-      current += ch;
+      const bt = scanBacktick(segment, i);
+      current += segment.slice(i, bt.endIdx + 1);
+      i = bt.endIdx;
     } else if (ch === "$" && segment[i + 1] === "(") {
-      substDepth = 1;
-      current += "$(";
-      i += 1;
+      const sub = scanCommandSubst(segment, i);
+      current += segment.slice(i, sub.endIdx + 1);
+      i = sub.endIdx;
     } else if (/\s/.test(ch)) {
       if (current.length > 0) {
         tokens.push(current);
@@ -227,8 +351,6 @@ export function splitShellPipelines(commandLine) {
   let current = "";
   let inSingle = false;
   let inDouble = false;
-  let inBacktick = false;
-  let parenDepth = 0;
 
   const pushSegment = () => {
     const trimmed = current.trim();
@@ -256,30 +378,21 @@ export function splitShellPipelines(commandLine) {
       i += 1;
       continue;
     }
-    if (inBacktick) {
-      current += ch;
-      if (ch === "`") inBacktick = false;
-      continue;
-    }
     if (inDouble) {
-      current += ch;
-      if (ch === "`") inBacktick = true;
-      else if (ch === "$" && next === "(") {
-        parenDepth += 1;
-        current += "(";
-        i += 1;
-      } else if (parenDepth > 0 && ch === ")") {
-        parenDepth -= 1;
-      } else if (ch === '"' && parenDepth === 0) {
-        inDouble = false;
+      if (ch === "`") {
+        const bt = scanBacktick(commandLine, i);
+        current += commandLine.slice(i, bt.endIdx + 1);
+        i = bt.endIdx;
+        continue;
       }
-      continue;
-    }
-
-    if (parenDepth > 0) {
+      if (ch === "$" && next === "(") {
+        const sub = scanCommandSubst(commandLine, i);
+        current += commandLine.slice(i, sub.endIdx + 1);
+        i = sub.endIdx;
+        continue;
+      }
       current += ch;
-      if (ch === "(") parenDepth += 1;
-      else if (ch === ")") parenDepth -= 1;
+      if (ch === '"') inDouble = false;
       continue;
     }
 
@@ -294,15 +407,37 @@ export function splitShellPipelines(commandLine) {
       continue;
     }
     if (ch === "`") {
-      inBacktick = true;
-      current += ch;
+      const bt = scanBacktick(commandLine, i);
+      current += commandLine.slice(i, bt.endIdx + 1);
+      i = bt.endIdx;
       continue;
     }
     if (ch === "$" && next === "(") {
-      parenDepth = 1;
-      current += "$(";
-      i += 1;
+      const sub = scanCommandSubst(commandLine, i);
+      current += commandLine.slice(i, sub.endIdx + 1);
+      i = sub.endIdx;
       continue;
+    }
+    if (ch === "(" && (current.trim() === "" || current.trim().endsWith("("))) {
+      const grp = scanBalancedGroup(commandLine, i, "(", ")");
+      if (grp.closed) {
+        current += commandLine.slice(i, grp.endIdx + 1);
+        i = grp.endIdx;
+        continue;
+      }
+    }
+    if (
+      ch === "{" &&
+      (current.trim() === "" || /\(\s*\)$/.test(current.trim())) &&
+      typeof next === "string" &&
+      /[\s;\n]/.test(next)
+    ) {
+      const grp = scanBalancedGroup(commandLine, i, "{", "}");
+      if (grp.closed) {
+        current += commandLine.slice(i, grp.endIdx + 1);
+        i = grp.endIdx;
+        continue;
+      }
     }
 
     if (ch === "\n" || ch === ";") {
@@ -374,66 +509,15 @@ export function extractCommandSubstitutions(segment) {
       continue;
     }
     if (ch === "`") {
-      let j = i + 1;
-      let body = "";
-      while (j < segment.length) {
-        if (segment[j] === "\\" && j + 1 < segment.length) {
-          body += segment[j + 1];
-          j += 2;
-          continue;
-        }
-        if (segment[j] === "`") break;
-        body += segment[j];
-        j += 1;
-      }
-      if (body.trim()) inner.push(body);
-      i = j;
+      const bt = scanBacktick(segment, i);
+      if (bt.body.trim()) inner.push(bt.body);
+      i = bt.endIdx;
       continue;
     }
     if (ch === "$" && segment[i + 1] === "(") {
-      // Skip arithmetic `$(( ... ))` which cannot run arbitrary commands on its own unless nested
-      let depth = 1;
-      let j = i + 2;
-      let body = "";
-      let subSingle = false;
-      let subDouble = false;
-      while (j < segment.length && depth > 0) {
-        const c = segment[j];
-        if (subSingle) {
-          body += c;
-          if (c === "'") subSingle = false;
-          j += 1;
-          continue;
-        }
-        if (c === "\\" && j + 1 < segment.length) {
-          body += c + segment[j + 1];
-          j += 2;
-          continue;
-        }
-        if (c === "'" && !subDouble) {
-          subSingle = true;
-          body += c;
-          j += 1;
-          continue;
-        }
-        if (c === '"') {
-          subDouble = !subDouble;
-          body += c;
-          j += 1;
-          continue;
-        }
-        if (!subDouble) {
-          if (c === "(") depth += 1;
-          else if (c === ")") {
-            depth -= 1;
-            if (depth === 0) break;
-          }
-        }
-        body += c;
-        j += 1;
-      }
-      if (body.trim()) inner.push(body);
-      i = j;
+      const sub = scanCommandSubst(segment, i);
+      if (sub.body.trim()) inner.push(sub.body);
+      i = sub.endIdx;
     }
   }
   return inner;
@@ -482,35 +566,157 @@ export function normalizeGuardContext(ctx = {}) {
   };
 }
 
+function isOutsideRel(rel) {
+  return rel === ".." || rel.startsWith("../") || path.posix.isAbsolute(rel);
+}
+
+function resolvePhysicalPath(absTarget) {
+  let current = path.resolve(absTarget);
+  for (let hops = 0; hops < 24; hops += 1) {
+    let cursor = current;
+    const suffix = [];
+    let foundSymlink = false;
+    while (true) {
+      let st;
+      try {
+        st = fs.lstatSync(cursor);
+      } catch (err) {
+        if (err && err.code === "ENOENT") {
+          const parent = path.dirname(cursor);
+          if (parent === cursor) {
+            return {
+              path: toPosix(path.resolve(cursor, ...suffix.reverse())),
+              loop: false,
+            };
+          }
+          suffix.push(path.basename(cursor));
+          cursor = parent;
+          continue;
+        }
+        return { path: toPosix(current), loop: false };
+      }
+      if (st.isSymbolicLink()) {
+        let linkTarget;
+        try {
+          linkTarget = fs.readlinkSync(cursor);
+        } catch {
+          return { path: toPosix(current), loop: false };
+        }
+        const resolvedNext = path.resolve(path.dirname(cursor), linkTarget);
+        current =
+          suffix.length > 0
+            ? path.resolve(resolvedNext, ...suffix.reverse())
+            : resolvedNext;
+        foundSymlink = true;
+        break;
+      }
+      try {
+        const realCursor = fs.realpathSync(cursor);
+        const finalPath =
+          suffix.length > 0
+            ? path.resolve(realCursor, ...suffix.reverse())
+            : realCursor;
+        return { path: toPosix(finalPath), loop: false };
+      } catch {
+        return { path: toPosix(current), loop: false };
+      }
+    }
+    if (!foundSymlink) break;
+  }
+  return { path: toPosix(current), loop: true };
+}
+
+function expandPwdPrefix(posixRaw) {
+  if (posixRaw === "$PWD" || posixRaw === "${PWD}") return ".";
+  if (posixRaw.startsWith("$PWD/")) return `./${posixRaw.slice(5)}`;
+  if (posixRaw.startsWith("${PWD}/")) return `./${posixRaw.slice(7)}`;
+  return posixRaw;
+}
+
+function isHomePath(val) {
+  return (
+    val === "~" ||
+    val.startsWith("~/") ||
+    val.startsWith("$HOME") ||
+    val.startsWith("${HOME}")
+  );
+}
+
 /**
  * Resolve a target path against `root` / `cwd` and report whether it escapes `root`.
  */
 export function relativeToRoot(rawPath, root, cwd) {
   const cleaned = unquoteShellToken(String(rawPath || "")).trim();
-  const posixRaw = toPosix(cleaned);
-  if (
-    !posixRaw ||
-    posixRaw === "~" ||
-    posixRaw.startsWith("~/") ||
-    posixRaw.startsWith("$HOME") ||
-    posixRaw.startsWith("${HOME}")
-  ) {
-    return { outside: true, rel: null, normalized: posixRaw };
+  const posixRaw = expandPwdPrefix(toPosix(cleaned));
+  if (!posixRaw || isHomePath(posixRaw)) {
+    return { outside: true, symlinkEscape: false, rel: null, normalized: posixRaw };
+  }
+
+  const cwdPosix = cwd ? toPosix(cwd) : "";
+  if (cwdPosix && isHomePath(cwdPosix) && !posixRaw.startsWith("/")) {
+    return { outside: true, symlinkEscape: false, rel: null, normalized: posixRaw };
   }
 
   const absRoot = path.posix.resolve(toPosix(root || "/"));
-  const baseDir = cwd
-    ? path.posix.resolve(absRoot, toPosix(cwd))
+  const baseDir = cwdPosix
+    ? path.posix.resolve(absRoot, cwdPosix)
     : absRoot;
   const resolved = path.posix.resolve(baseDir, posixRaw);
+
+  let rootExists = false;
+  try {
+    rootExists = fs.existsSync(absRoot);
+  } catch {
+    rootExists = false;
+  }
+
+  if (rootExists) {
+    let realRoot = absRoot;
+    try {
+      realRoot = toPosix(fs.realpathSync(absRoot));
+    } catch {
+      realRoot = absRoot;
+    }
+    const lexRelAbs = path.posix.relative(absRoot, resolved);
+    const lexRelReal = path.posix.relative(realRoot, resolved);
+    const lexicalOutside = isOutsideRel(lexRelAbs) && isOutsideRel(lexRelReal);
+
+    const phys = resolvePhysicalPath(resolved);
+    if (phys.loop && !lexicalOutside) {
+      return {
+        outside: false,
+        symlinkEscape: true,
+        rel: isOutsideRel(lexRelAbs) ? lexRelReal : lexRelAbs,
+        normalized: phys.path,
+      };
+    }
+
+    const physRel = path.posix.relative(realRoot, phys.path);
+    const physOutside = isOutsideRel(physRel);
+
+    if (!lexicalOutside && physOutside) {
+      return {
+        outside: false,
+        symlinkEscape: true,
+        rel: isOutsideRel(lexRelAbs) ? lexRelReal : lexRelAbs,
+        normalized: phys.path,
+      };
+    }
+
+    return {
+      outside: physOutside,
+      symlinkEscape: false,
+      rel: physOutside ? null : physRel === "" ? "." : physRel,
+      normalized: phys.path,
+    };
+  }
+
   const rel = path.posix.relative(absRoot, resolved);
-  const outside =
-    rel === ".." ||
-    rel.startsWith("../") ||
-    path.posix.isAbsolute(rel);
+  const outside = isOutsideRel(rel);
 
   return {
     outside,
+    symlinkEscape: false,
     rel: outside ? null : rel === "" ? "." : rel,
     normalized: resolved,
   };
@@ -534,6 +740,9 @@ function matchesHoldoutMarker(candidatePath, holdoutMarkers) {
   return false;
 }
 
+const CASE_INSENSITIVE_FS =
+  process.platform === "darwin" || process.platform === "win32";
+
 /**
  * Inspect a single file/directory write or delete target against secret, git-internal,
  * control-dir, holdout, and frozen-file guard rules.
@@ -550,7 +759,7 @@ export function inspectTargetPath(
   if (!unquoted) return { decision: "allow" };
 
   const policy = normalizeGuardContext(ctx);
-  let checkPath = path.posix.normalize(toPosix(unquoted));
+  let checkPath = path.posix.normalize(expandPwdPrefix(toPosix(unquoted)));
   if (checkPath.length > 1 && checkPath.endsWith("/")) {
     checkPath = checkPath.slice(0, -1);
   }
@@ -559,6 +768,13 @@ export function inspectTargetPath(
   let outside = false;
   if (root) {
     const info = relativeToRoot(unquoted, root, cwd);
+    if (info.symlinkEscape) {
+      return {
+        decision: "deny",
+        reason: `Blocked symlink target escaping workspace (${unquoted}).`,
+        rel: info.rel,
+      };
+    }
     outside = info.outside;
     if (respectOutside && info.outside) {
       return { decision: "allow", outside: true, rel: null };
@@ -572,9 +788,10 @@ export function inspectTargetPath(
   }
 
   const normalizedCheck = checkPath.replace(/^\.?\//, "");
+  const lowerCheck = normalizedCheck.toLowerCase();
   if (
-    normalizedCheck === ".git" ||
-    normalizedCheck.startsWith(".git/") ||
+    lowerCheck === ".git" ||
+    lowerCheck.startsWith(".git/") ||
     (!respectOutside && /(^|\/)\.git(\/|$)/i.test(normalizedCheck))
   ) {
     return {
@@ -586,9 +803,11 @@ export function inspectTargetPath(
 
   for (const prefix of policy.controlPrefixes) {
     const bare = prefix.replace(/\/+$/, "");
+    const bareLower = bare.toLowerCase();
+    const prefixLower = prefix.toLowerCase();
     if (
-      normalizedCheck === bare ||
-      normalizedCheck.startsWith(prefix) ||
+      lowerCheck === bareLower ||
+      lowerCheck.startsWith(prefixLower) ||
       (!respectOutside &&
         new RegExp(`(^|/)${escapeRegExp(bare)}(/|$)`, "i").test(normalizedCheck))
     ) {
@@ -610,11 +829,16 @@ export function inspectTargetPath(
 
   if (policy.frozenSet.size > 0) {
     const candidateRel = rel === "." ? "" : rel || normalizedCheck;
+    const candidateLower = candidateRel.toLowerCase();
     for (const frozenPath of policy.frozenSet) {
       const cleanFrozen = frozenPath.replace(/\/+$/, "");
+      const cleanFrozenLower = cleanFrozen.toLowerCase();
       if (
         candidateRel === cleanFrozen ||
-        (cleanFrozen && candidateRel.startsWith(`${cleanFrozen}/`))
+        (cleanFrozen && candidateRel.startsWith(`${cleanFrozen}/`)) ||
+        (CASE_INSENSITIVE_FS &&
+          (candidateLower === cleanFrozenLower ||
+            (cleanFrozenLower && candidateLower.startsWith(`${cleanFrozenLower}/`))))
       ) {
         return {
           decision: "deny",
@@ -746,6 +970,62 @@ function stripCommandPrefixes(rawTokens) {
   return { envAssignments, tokens: rawTokens.slice(idx) };
 }
 
+function findUnquotedRedirect(rawToken) {
+  let inSingle = false;
+  let inDouble = false;
+
+  for (let i = 0; i < rawToken.length; i += 1) {
+    const ch = rawToken[i];
+    if (inSingle) {
+      if (ch === "'") inSingle = false;
+      continue;
+    }
+    if (ch === "\\" && i + 1 < rawToken.length) {
+      i += 1;
+      continue;
+    }
+    if (inDouble) {
+      if (ch === '"') inDouble = false;
+      continue;
+    }
+    if (ch === "'") {
+      inSingle = true;
+      continue;
+    }
+    if (ch === '"') {
+      inDouble = true;
+      continue;
+    }
+
+    if (ch === ">" || (ch === "&" && rawToken[i + 1] === ">") || (ch === "<" && rawToken[i + 1] === ">")) {
+      let opStart = i;
+      const prefix = rawToken.slice(0, i);
+      if (/^\d+$/.test(prefix)) {
+        opStart = 0;
+      }
+      const rest = rawToken.slice(i);
+      const opMatch = rest.match(/^(?:&>>|&>|>>|>\||<>|>&|>)/);
+      if (opMatch) {
+        const op = opMatch[0];
+        const opEnd = i + op.length;
+        return {
+          opStart,
+          op,
+          prefix: rawToken.slice(0, opStart),
+          suffix: rawToken.slice(opEnd),
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function isFdTarget(op, target) {
+  if (/^&\d+$|^&-$/.test(target)) return true;
+  if (op.endsWith(">&") && /^(?:\d+|-)$/.test(target)) return true;
+  return false;
+}
+
 function extractRedirects(rawTokens) {
   const redirectTargets = [];
   const commandTokens = [];
@@ -754,19 +1034,28 @@ function extractRedirects(rawTokens) {
     const raw = rawTokens[i];
     const tok = unquoteShellToken(raw);
 
-    if (/^(?:\d+|&)?(?:>>?|>\||&>>?)$/.test(tok)) {
+    if (/^(?:\d+|&)?(?:>>?|>\||<>|>&|&>>?)$/.test(tok)) {
       if (i + 1 < rawTokens.length) {
         const nextTok = unquoteShellToken(rawTokens[i + 1]);
-        if (!/^&\d+$|^&-$/.test(nextTok)) redirectTargets.push(nextTok);
+        if (!isFdTarget(tok, nextTok)) redirectTargets.push(nextTok);
         i += 1;
       }
       continue;
     }
 
-    const attached = tok.match(/^(?:\d+|&)?(?:>>?|>\||&>>?)(.+)$/);
-    if (attached) {
-      const target = attached[1];
-      if (!/^&\d+$|^&-$/.test(target)) redirectTargets.push(target);
+    const found = findUnquotedRedirect(raw);
+    if (found) {
+      if (found.prefix) {
+        commandTokens.push(found.prefix);
+      }
+      if (found.suffix) {
+        const target = unquoteShellToken(found.suffix);
+        if (!isFdTarget(found.op, target)) redirectTargets.push(target);
+      } else if (i + 1 < rawTokens.length) {
+        const nextTok = unquoteShellToken(rawTokens[i + 1]);
+        if (!isFdTarget(found.op, nextTok)) redirectTargets.push(nextTok);
+        i += 1;
+      }
       continue;
     }
 
@@ -776,11 +1065,20 @@ function extractRedirects(rawTokens) {
   return { redirectTargets, commandTokens };
 }
 
-function parseCopyMoveDestinations(args, { includeSources = false } = {}) {
+function parseCopyMoveDestinations(
+  args,
+  { includeSources = false, extraValueFlags = [] } = {},
+) {
   let targetDir = null;
   const positional = [];
   let stopFlags = false;
-  const valueFlags = new Set(["-t", "--target-directory", "-S", "--suffix"]);
+  const valueFlags = new Set([
+    "-t",
+    "--target-directory",
+    "-S",
+    "--suffix",
+    ...extraValueFlags,
+  ]);
 
   for (let i = 0; i < args.length; i += 1) {
     const tok = unquoteShellToken(args[i]);
@@ -794,6 +1092,12 @@ function parseCopyMoveDestinations(args, { includeSources = false } = {}) {
     }
     if (!stopFlags && tok.startsWith("-t") && tok.length > 2 && tok !== "-target-directory") {
       targetDir = tok.slice(2);
+      continue;
+    }
+    if (!stopFlags && /^-[A-Za-z]*t$/.test(tok)) {
+      const next = i + 1 < args.length ? unquoteShellToken(args[i + 1]) : null;
+      if (next) targetDir = next;
+      i += 1;
       continue;
     }
     if (!stopFlags && valueFlags.has(tok)) {
@@ -811,22 +1115,33 @@ function parseCopyMoveDestinations(args, { includeSources = false } = {}) {
   if (includeSources) {
     const out = [...positional];
     if (targetDir) out.push(targetDir);
-    return out;
+    return { targets: out, positional, targetDir };
   }
-  if (targetDir) return [targetDir];
-  if (positional.length >= 2) return [positional[positional.length - 1]];
-  if (positional.length === 1 && targetDir === null) return [positional[0]];
-  return [];
+  const targets = targetDir
+    ? [targetDir]
+    : positional.length >= 2
+      ? [positional[positional.length - 1]]
+      : positional.length === 1 && targetDir === null
+        ? [positional[0]]
+        : [];
+  return { targets, positional, targetDir };
 }
 
 function parseInPlaceTargets(cmd, args) {
   let inPlace = false;
   let hasExplicitScript = false;
+  let expectBackupExt = false;
   const positional = [];
   let stopFlags = false;
 
   for (let i = 0; i < args.length; i += 1) {
     const tok = unquoteShellToken(args[i]);
+    if (!stopFlags && expectBackupExt) {
+      expectBackupExt = false;
+      if (tok === "") {
+        continue;
+      }
+    }
     if (!stopFlags && tok === "--") {
       stopFlags = true;
       continue;
@@ -838,10 +1153,22 @@ function parseInPlaceTargets(cmd, args) {
       }
       if (/^-[A-Za-z]*i/.test(tok) || (cmd === "sed" && tok.startsWith("-i"))) {
         inPlace = true;
+        if (tok === "-i" || /^-[A-Za-z]*i$/.test(tok)) {
+          expectBackupExt = true;
+        }
       }
       if (tok === "-e" || tok === "-f" || tok === "--expression" || tok === "--file") {
         hasExplicitScript = true;
         i += 1;
+      } else if (
+        tok.startsWith("--expression=") ||
+        tok.startsWith("--file=") ||
+        (!tok.startsWith("--") && /^-[A-Za-z]*[ef]$/.test(tok))
+      ) {
+        hasExplicitScript = true;
+        if (!tok.startsWith("--")) i += 1;
+      } else if (!tok.startsWith("--") && /^-[A-Za-z]*[ef].+$/.test(tok)) {
+        hasExplicitScript = true;
       }
       continue;
     }
@@ -880,9 +1207,14 @@ function parseGitSubcommand(args) {
   return { subcommand: "", subArgs: [] };
 }
 
-function hasShortFlag(tokens, flagChar) {
-  for (const tok of tokens) {
+function hasShortFlag(tokens, flagChar, valueFlags = new Set()) {
+  for (let i = 0; i < tokens.length; i += 1) {
+    const tok = tokens[i];
     if (tok === "--") break;
+    if (valueFlags.has(tok)) {
+      i += 1;
+      continue;
+    }
     if (tok.startsWith("-") && !tok.startsWith("--") && tok.length > 1) {
       if (tok.slice(1).includes(flagChar)) return true;
     }
@@ -890,10 +1222,71 @@ function hasShortFlag(tokens, flagChar) {
   return false;
 }
 
-/**
- * Evaluate a single shell command line against CONTRACT.md §8 rules and optional slice checks.
- */
-export function evaluateShellCommand(
+function resolveCdTarget(rawTarget, root, currentCwd) {
+  const cleaned = unquoteShellToken(String(rawTarget || "")).trim();
+  if (!cleaned || isHomePath(cleaned)) {
+    return "~";
+  }
+  const absRoot = path.posix.resolve(toPosix(root || "/"));
+  const baseDir =
+    currentCwd && !isHomePath(toPosix(currentCwd))
+      ? path.posix.resolve(absRoot, toPosix(currentCwd))
+      : absRoot;
+  return path.posix.resolve(baseDir, expandPwdPrefix(toPosix(cleaned)));
+}
+
+function splitWrappedGroup(segment) {
+  const trimmed = segment.trim();
+  if (trimmed.startsWith("(") && !trimmed.startsWith("((")) {
+    const grp = scanBalancedGroup(trimmed, 0, "(", ")");
+    if (grp.closed) {
+      return {
+        kind: "subshell",
+        inner: trimmed.slice(1, grp.endIdx),
+        suffix: trimmed.slice(grp.endIdx + 1).trim(),
+      };
+    }
+  }
+  if (trimmed.startsWith("{") && /^\{[\s;\n]/.test(trimmed)) {
+    const grp = scanBalancedGroup(trimmed, 0, "{", "}");
+    if (grp.closed) {
+      return {
+        kind: "brace",
+        inner: trimmed.slice(1, grp.endIdx),
+        suffix: trimmed.slice(grp.endIdx + 1).trim(),
+      };
+    }
+  }
+  return null;
+}
+
+const SHELL_WRAPPER_VALUE_FLAGS = new Set(["-o", "+o", "-O", "+O"]);
+const GIT_COMMIT_VALUE_FLAGS = new Set([
+  "-m",
+  "--message",
+  "-F",
+  "--file",
+  "-C",
+  "--reuse-message",
+  "-c",
+  "--reedit-message",
+  "--author",
+  "--date",
+  "--cleanup",
+  "-S",
+  "--gpg-sign",
+]);
+const GIT_CHECKOUT_VALUE_FLAGS = new Set([
+  "-b",
+  "-B",
+  "--orphan",
+  "--conflict",
+  "-U",
+  "--unified",
+  "--pathspec-from-file",
+]);
+
+function evaluateShellInternal(
   commandLine,
   {
     root,
@@ -908,27 +1301,52 @@ export function evaluateShellCommand(
   } = {},
 ) {
   if (typeof commandLine !== "string" || commandLine.trim() === "") {
-    return { decision: "allow" };
+    return { decision: "allow", finalCwd: cwd };
   }
   if (depth > 5) {
     return {
       decision: "deny",
       reason: "Blocked excessively nested shell command expansion.",
+      finalCwd: cwd,
     };
   }
 
   if (/:\(\)\s*\{[^}]*:\s*\|\s*:[^}]*\}\s*;\s*:/.test(commandLine)) {
-    return { decision: "deny", reason: "Blocked catastrophic shell fork bomb." };
+    return {
+      decision: "deny",
+      reason: "Blocked catastrophic shell fork bomb.",
+      finalCwd: cwd,
+    };
   }
 
-  const checkPath = (rawTarget) => {
-    const res = inspectTargetPath(rawTarget, { root, cwd, ctx, respectOutside });
+  let currentCwd = cwd || root;
+  let prevCwd = currentCwd;
+
+  const subOpts = (activeCwd) => ({
+    root,
+    cwd: activeCwd,
+    ctx,
+    respectOutside,
+    gitPushDecision,
+    gitPushForceDecision,
+    gitAskDecision,
+    sliceCheck,
+    depth: depth + 1,
+  });
+
+  const checkPath = (rawTarget, { targetCwd = currentCwd, checkSlice = true } = {}) => {
+    const res = inspectTargetPath(rawTarget, {
+      root,
+      cwd: targetCwd,
+      ctx,
+      respectOutside,
+    });
     if (res.decision !== "allow") return res;
-    if (sliceCheck && !res.outside) {
-      const sliceRes = sliceCheck(rawTarget);
+    if (checkSlice && sliceCheck && !res.outside) {
+      const sliceRes = sliceCheck(res.rel ?? rawTarget, targetCwd);
       if (sliceRes && sliceRes.decision !== "allow") return sliceRes;
     }
-    return { decision: "allow" };
+    return { decision: "allow", rel: res.rel, outside: res.outside };
   };
 
   let pendingAsk = null;
@@ -940,22 +1358,34 @@ export function evaluateShellCommand(
 
   for (const pipeline of pipelines) {
     let sawDownloader = false;
+    const isPipe = pipeline.length > 1;
 
     for (const segment of pipeline) {
+      const segCwd = currentCwd;
+
       for (const inner of extractCommandSubstitutions(segment)) {
-        const subRes = evaluateShellCommand(inner, {
-          root,
-          cwd,
-          ctx,
-          respectOutside,
-          gitPushDecision,
-          gitPushForceDecision,
-          gitAskDecision,
-          sliceCheck,
-          depth: depth + 1,
-        });
+        const subRes = evaluateShellInternal(inner, subOpts(segCwd));
         if (subRes.decision === "deny") return subRes;
         if (subRes.decision !== "allow") recordAsk(subRes.reason);
+      }
+
+      const wrapped = splitWrappedGroup(segment);
+      if (wrapped) {
+        if (wrapped.suffix) {
+          const suffixTokens = tokenizeShellSegment(wrapped.suffix);
+          const { redirectTargets } = extractRedirects(suffixTokens);
+          for (const target of redirectTargets) {
+            const targetRes = checkPath(target, { targetCwd: segCwd });
+            if (targetRes.decision !== "allow") return targetRes;
+          }
+        }
+        const nestedRes = evaluateShellInternal(wrapped.inner, subOpts(segCwd));
+        if (nestedRes.decision === "deny") return nestedRes;
+        if (nestedRes.decision !== "allow") recordAsk(nestedRes.reason);
+        if (wrapped.kind === "brace" && !isPipe && nestedRes.finalCwd !== undefined) {
+          currentCwd = nestedRes.finalCwd;
+        }
+        continue;
       }
 
       const rawTokens = tokenizeShellSegment(segment);
@@ -963,7 +1393,7 @@ export function evaluateShellCommand(
 
       const { redirectTargets, commandTokens } = extractRedirects(rawTokens);
       for (const target of redirectTargets) {
-        const targetRes = checkPath(target);
+        const targetRes = checkPath(target, { targetCwd: segCwd });
         if (targetRes.decision !== "allow") return targetRes;
       }
 
@@ -993,6 +1423,26 @@ export function evaluateShellCommand(
         };
       }
 
+      if (cmd === "cd" || cmd === "pushd") {
+        let dirArg = "";
+        for (const arg of unquotedArgs) {
+          if (arg === "--" || /^-[LPe@]+$/.test(arg)) continue;
+          dirArg = arg;
+          break;
+        }
+        if (!isPipe) {
+          if (dirArg === "-") {
+            const tmp = currentCwd;
+            currentCwd = prevCwd;
+            prevCwd = tmp;
+          } else {
+            prevCwd = currentCwd;
+            currentCwd = resolveCdTarget(dirArg, root, currentCwd);
+          }
+        }
+        continue;
+      }
+
       if (cmd === "mkfs" || cmd.startsWith("mkfs.")) {
         return {
           decision: "deny",
@@ -1000,28 +1450,39 @@ export function evaluateShellCommand(
         };
       }
 
+      if (cmd === "eval") {
+        const evalArgs = unquotedArgs[0] === "--" ? unquotedArgs.slice(1) : unquotedArgs;
+        const joined = evalArgs.join(" ").trim();
+        if (joined) {
+          const nestedRes = evaluateShellInternal(joined, subOpts(segCwd));
+          if (nestedRes.decision === "deny") return nestedRes;
+          if (nestedRes.decision !== "allow") recordAsk(nestedRes.reason);
+          if (!isPipe && nestedRes.finalCwd !== undefined) {
+            currentCwd = nestedRes.finalCwd;
+          }
+        }
+        continue;
+      }
+
       if (SHELL_WRAPPER_CMDS.has(cmd)) {
         for (let i = 0; i < unquotedArgs.length; i += 1) {
           const arg = unquotedArgs[i];
+          if (arg === "--") break;
+          if (SHELL_WRAPPER_VALUE_FLAGS.has(arg)) {
+            i += 1;
+            continue;
+          }
           if (arg === "-c" || /^-[A-Za-z]*c[A-Za-z]*$/.test(arg)) {
-            if (i + 1 < unquotedArgs.length) {
-              const nestedRes = evaluateShellCommand(unquotedArgs[i + 1], {
-                root,
-                cwd,
-                ctx,
-                respectOutside,
-                gitPushDecision,
-                gitPushForceDecision,
-                gitAskDecision,
-                sliceCheck,
-                depth: depth + 1,
-              });
+            let cmdIdx = i + 1;
+            if (unquotedArgs[cmdIdx] === "--") cmdIdx += 1;
+            if (cmdIdx < unquotedArgs.length) {
+              const nestedRes = evaluateShellInternal(unquotedArgs[cmdIdx], subOpts(segCwd));
               if (nestedRes.decision === "deny") return nestedRes;
               if (nestedRes.decision !== "allow") recordAsk(nestedRes.reason);
             }
             break;
           }
-          if (!arg.startsWith("-")) break;
+          if (!arg.startsWith("-") && !arg.startsWith("+")) break;
         }
         continue;
       }
@@ -1050,31 +1511,70 @@ export function evaluateShellCommand(
           if (
             (recursive ||
               CATASTROPHIC_RM_TARGETS.has(normalizeRmTarget(target))) &&
-            isCatastrophicRm(target, cwd)
+            isCatastrophicRm(target, segCwd)
           ) {
             return {
               decision: "deny",
               reason: `Blocked catastrophic recursive delete targeting "${target}".`,
             };
           }
-          const targetRes = checkPath(target);
+          const targetRes = checkPath(target, { targetCwd: segCwd });
           if (targetRes.decision !== "allow") return targetRes;
         }
         continue;
       }
 
       if (cmd === "mv") {
-        for (const target of parseCopyMoveDestinations(args, { includeSources: true })) {
-          const res = checkPath(target);
+        const parsed = parseCopyMoveDestinations(args, { includeSources: true });
+        for (const target of parsed.targets) {
+          const res = checkPath(target, { targetCwd: segCwd });
           if (res.decision !== "allow") return res;
         }
         continue;
       }
 
       if (cmd === "cp" || cmd === "ln" || cmd === "install") {
-        for (const target of parseCopyMoveDestinations(args, { includeSources: false })) {
-          const res = checkPath(target);
+        const extraValueFlags =
+          cmd === "install"
+            ? ["-m", "--mode", "-o", "--owner", "-g", "--group"]
+            : [];
+        const parsed = parseCopyMoveDestinations(args, {
+          includeSources: false,
+          extraValueFlags,
+        });
+        for (const target of parsed.targets) {
+          const res = checkPath(target, { targetCwd: segCwd });
           if (res.decision !== "allow") return res;
+        }
+        if (
+          cmd === "ln" &&
+          (hasShortFlag(unquotedArgs, "s") || unquotedArgs.includes("--symbolic")) &&
+          parsed.targets.length > 0 &&
+          parsed.positional.length >= (parsed.targetDir ? 1 : 2)
+        ) {
+          const linkTarget = parsed.positional[0];
+          const destLink = parsed.targets[0];
+          const destInfo = root ? relativeToRoot(destLink, root, segCwd) : null;
+          if (destInfo && !destInfo.outside) {
+            const absRoot = path.posix.resolve(toPosix(root));
+            const baseDir = segCwd
+              ? path.posix.resolve(absRoot, toPosix(segCwd))
+              : absRoot;
+            const resolvedDest = path.posix.resolve(baseDir, toPosix(destLink));
+            const linkDir = parsed.targetDir ? resolvedDest : path.posix.dirname(resolvedDest);
+            const targetInfo = relativeToRoot(linkTarget, root, linkDir);
+            if (targetInfo.outside || targetInfo.symlinkEscape) {
+              return {
+                decision: "deny",
+                reason: `Blocked symlink escaping workspace (${linkTarget} -> ${destLink}).`,
+              };
+            }
+            const targetRes = checkPath(linkTarget, { targetCwd: linkDir });
+            if (targetRes.decision !== "allow") return targetRes;
+          } else if (!root) {
+            const targetRes = checkPath(linkTarget, { targetCwd: segCwd });
+            if (targetRes.decision !== "allow") return targetRes;
+          }
         }
         continue;
       }
@@ -1096,7 +1596,7 @@ export function evaluateShellCommand(
             }
             continue;
           }
-          const res = checkPath(arg);
+          const res = checkPath(arg, { targetCwd: segCwd });
           if (res.decision !== "allow") return res;
         }
         continue;
@@ -1104,7 +1604,7 @@ export function evaluateShellCommand(
 
       if (cmd === "sed" || cmd === "perl") {
         for (const target of parseInPlaceTargets(cmd, args)) {
-          const res = checkPath(target);
+          const res = checkPath(target, { targetCwd: segCwd });
           if (res.decision !== "allow") return res;
         }
         continue;
@@ -1113,7 +1613,7 @@ export function evaluateShellCommand(
       if (cmd === "dd") {
         for (const arg of unquotedArgs) {
           if (arg.startsWith("of=")) {
-            const res = checkPath(arg.slice(3));
+            const res = checkPath(arg.slice(3), { targetCwd: segCwd });
             if (res.decision !== "allow") return res;
           }
         }
@@ -1154,10 +1654,22 @@ export function evaluateShellCommand(
         }
         const { subcommand, subArgs } = parseGitSubcommand(args);
         if (
+          subcommand === "config" &&
+          !subArgs.some((a) =>
+            ["--get", "--get-all", "--get-regexp", "--list", "-l"].includes(a),
+          ) &&
+          subArgs.some((a) => /^core\.hooksPath(?:=|$)/i.test(a))
+        ) {
+          return {
+            decision: "deny",
+            reason: "Blocked hook bypass via git config core.hooksPath.",
+          };
+        }
+        if (
           subArgs.includes("--no-verify") ||
           (NO_VERIFY_GIT_SUBCOMMANDS.has(subcommand) &&
             (subcommand === "commit" || subcommand === "merge") &&
-            hasShortFlag(subArgs, "n"))
+            hasShortFlag(subArgs, "n", GIT_COMMIT_VALUE_FLAGS))
         ) {
           return {
             decision: "deny",
@@ -1205,18 +1717,43 @@ export function evaluateShellCommand(
 
         if (subcommand === "checkout" || subcommand === "restore") {
           const dashIdx = subArgs.indexOf("--");
-          const pathSpecs =
-            dashIdx >= 0
-              ? subArgs.slice(dashIdx + 1)
-              : subcommand === "restore"
-                ? subArgs.filter((a, idx) => {
-                    if (a.startsWith("-")) return false;
-                    const prev = idx > 0 ? subArgs[idx - 1] : "";
-                    return prev !== "-s" && prev !== "--source" && prev !== "--conflict";
-                  })
-                : [];
+          let pathSpecs = [];
+          if (dashIdx >= 0) {
+            pathSpecs = subArgs.slice(dashIdx + 1);
+          } else if (subcommand === "restore") {
+            pathSpecs = subArgs.filter((a, idx) => {
+              if (a.startsWith("-")) return false;
+              const prev = idx > 0 ? subArgs[idx - 1] : "";
+              return prev !== "-s" && prev !== "--source" && prev !== "--conflict";
+            });
+          } else {
+            for (let j = 0; j < subArgs.length; j += 1) {
+              const tok = subArgs[j];
+              if (GIT_CHECKOUT_VALUE_FLAGS.has(tok)) {
+                j += 1;
+                continue;
+              }
+              if (tok.startsWith("-")) continue;
+              pathSpecs.push(tok);
+            }
+          }
           for (const target of pathSpecs) {
-            const res = checkPath(target);
+            let checkSliceForTarget = dashIdx >= 0 || subcommand === "restore";
+            if (!checkSliceForTarget && root && segCwd) {
+              try {
+                const absRoot = path.posix.resolve(toPosix(root));
+                const baseDir = path.posix.resolve(absRoot, toPosix(segCwd));
+                if (fs.existsSync(path.resolve(baseDir, target))) {
+                  checkSliceForTarget = true;
+                }
+              } catch {
+                checkSliceForTarget = false;
+              }
+            }
+            const res = checkPath(target, {
+              targetCwd: segCwd,
+              checkSlice: checkSliceForTarget,
+            });
             if (res.decision !== "allow") return res;
           }
         }
@@ -1224,7 +1761,19 @@ export function evaluateShellCommand(
     }
   }
 
-  return pendingAsk || { decision: "allow" };
+  return pendingAsk
+    ? { ...pendingAsk, finalCwd: currentCwd }
+    : { decision: "allow", finalCwd: currentCwd };
+}
+
+/**
+ * Evaluate a single shell command line against CONTRACT.md §8 rules and optional slice checks.
+ */
+export function evaluateShellCommand(commandLine, options = {}) {
+  const result = evaluateShellInternal(commandLine, options);
+  if (!result || typeof result !== "object") return { decision: "allow" };
+  const { finalCwd: _ignored, ...clean } = result;
+  return clean;
 }
 
 /**

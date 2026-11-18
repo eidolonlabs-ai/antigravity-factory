@@ -4,9 +4,15 @@ import crypto from "node:crypto";
 
 export function readRecord(cwd, name) {
   try {
-    return JSON.parse(
-      fs.readFileSync(path.join(cwd, ".factory", name), "utf8"),
-    );
+    if (!name || path.basename(name) !== name) return null;
+    const realCwd = fs.realpathSync(cwd);
+    const dir = path.join(realCwd, ".factory");
+    const dirStat = fs.lstatSync(dir);
+    if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) return null;
+    const file = path.join(dir, name);
+    const fileStat = fs.lstatSync(file);
+    if (fileStat.isSymbolicLink() || !fileStat.isFile()) return null;
+    return JSON.parse(fs.readFileSync(file, "utf8"));
   } catch {
     return null;
   }

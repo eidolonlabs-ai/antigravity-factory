@@ -170,9 +170,15 @@ function walkAllCandidateFiles(dirPath, rootPath, acc = []) {
 
 function collectGitChangedFiles(realCwd, realRepoRoot, base) {
   const absPaths = new Set();
+  const deletedAbsPaths = new Set();
 
   const statusRes = runGit(['status', '--porcelain', '-z', '-uall'], realCwd);
-  if (statusRes.status === 0 && statusRes.stdout) {
+  if (statusRes.error || statusRes.status !== 0) {
+    throw new Error(
+      `Git status failed: ${statusRes.error?.message || statusRes.stderr || 'unknown error'}`
+    );
+  }
+  if (statusRes.stdout) {
     const tokens = statusRes.stdout.split('\0');
     for (let i = 0; i < tokens.length; i++) {
       const entry = tokens[i];
@@ -180,9 +186,14 @@ function collectGitChangedFiles(realCwd, realRepoRoot, base) {
       const xy = entry.slice(0, 2);
       const fileRelToRepo = entry.slice(3);
       if (xy[0] === 'R' || xy[0] === 'C') {
+        const origRel = tokens[i + 1] || '';
         i += 1; // skip original source path in -z output
+        if (xy[0] === 'R' && origRel) {
+          deletedAbsPaths.add(path.resolve(realRepoRoot, origRel));
+        }
       }
       if (xy.includes('D') && xy.trim() === 'D') {
+        deletedAbsPaths.add(path.resolve(realRepoRoot, fileRelToRepo));
         continue;
       }
       absPaths.add(path.resolve(realRepoRoot, fileRelToRepo));
@@ -194,16 +205,32 @@ function collectGitChangedFiles(realCwd, realRepoRoot, base) {
     if (trimmedBase.startsWith('-')) {
       throw new Error(`Invalid base revision "${trimmedBase}": revision must not start with "-".`);
     }
-    const diffRes = runGit(['diff', '--name-only', '-z', trimmedBase, '--'], realCwd);
-    if (diffRes.status === 0 && diffRes.stdout) {
-      for (const fileRelToRepo of diffRes.stdout.split('\0')) {
-        if (!fileRelToRepo) continue;
-        absPaths.add(path.resolve(realRepoRoot, fileRelToRepo));
+    const diffRes = runGit(['diff', '--name-status', '--no-renames', '-z', trimmedBase, '--'], realCwd);
+    if (diffRes.error || diffRes.status !== 0) {
+      throw new Error(
+        `Invalid base revision "${trimmedBase}" or git diff failed: ${
+          diffRes.error?.message || diffRes.stderr || 'unknown error'
+        }`
+      );
+    }
+    if (diffRes.stdout) {
+      const diffTokens = diffRes.stdout.split('\0');
+      for (let i = 0; i + 1 < diffTokens.length; i += 2) {
+        const status = diffTokens[i];
+        const fileRelToRepo = diffTokens[i + 1];
+        if (!status || !fileRelToRepo) continue;
+        const absTarget = path.resolve(realRepoRoot, fileRelToRepo);
+        if (status.startsWith('D')) {
+          deletedAbsPaths.add(absTarget);
+        } else {
+          absPaths.add(absTarget);
+        }
       }
     }
   }
 
   const results = [];
+  const presentRelSet = new Set();
   for (const candidateAbs of absPaths) {
     if (candidateAbs !== realCwd && !candidateAbs.startsWith(`${realCwd}${path.sep}`)) {
       continue;
@@ -229,18 +256,36 @@ function collectGitChangedFiles(realCwd, realRepoRoot, base) {
     const relPath = path.relative(realCwd, candidateAbs).split(path.sep).join('/');
     if (!shouldSkipRelPath(relPath)) {
       results.push({ absPath: candidateAbs, relPath });
+      presentRelSet.add(relPath);
     }
   }
 
-  return results;
+  const deletedRelPaths = [];
+  for (const delAbs of deletedAbsPaths) {
+    if (delAbs !== realCwd && !delAbs.startsWith(`${realCwd}${path.sep}`)) {
+      continue;
+    }
+    if (fs.existsSync(delAbs)) continue;
+    const relPath = path.relative(realCwd, delAbs).split(path.sep).join('/');
+    if (!presentRelSet.has(relPath) && !shouldSkipRelPath(relPath)) {
+      deletedRelPaths.push(relPath);
+    }
+  }
+
+  return { files: results, deletedRelPaths: [...new Set(deletedRelPaths)].sort() };
 }
+
+const PLACEHOLDER_BOUNDARY_RE = new RegExp(
+  `(?:^|[^a-z0-9])(${PLACEHOLDER_TOKENS.map((t) => t.replace(/_+$/, '')).join('|')})(?:$|[^a-z0-9])`,
+  'i'
+);
 
 function isPlaceholderSecret(secretValue) {
   const lower = secretValue.toLowerCase();
   if (lower.includes('$' + '{') || lower.includes('<') || lower.includes('>')) {
     return true;
   }
-  return PLACEHOLDER_TOKENS.some((tok) => lower.includes(tok));
+  return PLACEHOLDER_BOUNDARY_RE.test(lower);
 }
 
 function scanFileLines(absPath, relPath) {
@@ -387,6 +432,9 @@ export function runAuditDiff({
   }
 
   const resolvedCwd = path.resolve(cwd);
+  if (!fs.existsSync(resolvedCwd) || !fs.statSync(resolvedCwd).isDirectory()) {
+    throw new Error(`Workspace directory does not exist: ${resolvedCwd}`);
+  }
   let effectiveAllowPaths = allowPaths;
   if (!effectiveAllowPaths && slice) {
     const sliceSpec = resolveSliceSpec(resolvedCwd, slice);
@@ -394,17 +442,31 @@ export function runAuditDiff({
   }
 
   const allowedPatterns = normalizeAllowPathsList(effectiveAllowPaths);
-  const realCwd = fs.existsSync(resolvedCwd) ? fs.realpathSync(resolvedCwd) : resolvedCwd;
+  const realCwd = fs.realpathSync(resolvedCwd);
   const gitTopLevel = !allFiles ? getGitTopLevel(realCwd) : null;
 
-  const candidates = gitTopLevel
+  const collected = gitTopLevel
     ? collectGitChangedFiles(realCwd, gitTopLevel, base)
-    : walkAllCandidateFiles(realCwd, realCwd);
+    : { files: walkAllCandidateFiles(realCwd, realCwd), deletedRelPaths: [] };
+  const candidates = collected.files;
 
   candidates.sort((a, b) => a.relPath.localeCompare(b.relPath));
 
   let filesScanned = 0;
   const findings = [];
+
+  for (const deletedRel of collected.deletedRelPaths) {
+    if (allowedPatterns.length > 0 && !matchesAllowedPath(deletedRel, allowedPatterns)) {
+      findings.push({
+        rule: 'slice-boundary-violation',
+        severity: 'high',
+        file: deletedRel,
+        line: 1,
+        snippet: `Allowed slice paths: ${allowedPatterns.join(', ')}`,
+        message: `Deleted file "${deletedRel}" is outside allowed slice ownership (${allowedPatterns.join(', ')}).`,
+      });
+    }
+  }
 
   for (const item of candidates) {
     if (allowedPatterns.length > 0 && !matchesAllowedPath(item.relPath, allowedPatterns)) {

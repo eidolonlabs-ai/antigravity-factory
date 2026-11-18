@@ -114,3 +114,58 @@ test("read-only unrelated directories survive successful copy upgrade cleanup", 
     "keep",
   );
 });
+
+test("runInit deduplicates link/copy plugin registrations, refuses symlinked pre-commit hook, and packaging/smoke scripts pass", async (t) => {
+  const os = await import("node:os");
+  const { execFileSync } = await import("node:child_process");
+  const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+
+  // 1. Switching link <-> copy deduplicates .agents/plugins.json
+  const cwd = setup(t);
+  runInit({ cwd, mode: "link" });
+  runInit({ cwd, mode: "copy" });
+  runInit({ cwd, mode: "link" });
+  const regPath = path.join(cwd, ".agents", "plugins.json");
+  const reg = JSON.parse(fs.readFileSync(regPath, "utf8"));
+  const entries = Array.isArray(reg) ? reg : reg.entries || reg.plugins || [];
+  const matches = entries.filter((e) => {
+    const p = typeof e === "string" ? e : e.path || e.source || e.id || e.name || "";
+    return String(p).includes("antigravity-factory");
+  });
+  assert.equal(matches.length, 1, `Expected 1 deduplicated registration, got ${JSON.stringify(entries)}`);
+
+  // 2. gitHook refuses symlinked .git/hooks/pre-commit
+  const hookCwd = setup(t);
+  execFileSync("git", ["init", "-q"], { cwd: hookCwd });
+  const hooksDir = path.join(hookCwd, ".git", "hooks");
+  fs.mkdirSync(hooksDir, { recursive: true });
+  const targetHook = path.join(hookCwd, "outside-hook.sh");
+  fs.writeFileSync(targetHook, "#!/bin/sh\necho untouched\n");
+  fs.symlinkSync(targetHook, path.join(hooksDir, "pre-commit"));
+  assert.throws(() => runInit({ cwd: hookCwd, mode: "link", gitHook: true }));
+  assert.equal(fs.readFileSync(targetHook, "utf8"), "#!/bin/sh\necho untouched\n");
+
+  // 3. package-plugin.js --out <tmp> includes references/entry-paths.md and excludes .DS_Store/node_modules
+  const pkgOut = fs.mkdtempSync(path.join(os.tmpdir(), "agy-pkg-out-"));
+  t.after(() => fs.rmSync(pkgOut, { recursive: true, force: true }));
+  execFileSync(
+    process.execPath,
+    [path.join(repoRoot, "scripts", "package-plugin.js"), "--out", pkgOut],
+    { cwd: repoRoot, stdio: "pipe" }
+  );
+  const archives = fs.readdirSync(pkgOut).filter((f) => f.endsWith(".tar.gz") || f.endsWith(".tgz"));
+  assert.equal(archives.length, 1, `Expected 1 tarball in ${pkgOut}, got ${JSON.stringify(fs.readdirSync(pkgOut))}`);
+  const tarEntries = execFileSync("tar", ["-tzf", path.join(pkgOut, archives[0])], {
+    encoding: "utf8",
+  });
+  assert.match(tarEntries, /skills\/factory-intake\/references\/entry-paths\.md/);
+  assert.doesNotMatch(tarEntries, /node_modules|\.DS_Store/);
+
+  // 4. smoke-plugin.js passes cleanly against packaged tarball
+  const smokeOut = execFileSync(
+    process.execPath,
+    [path.join(repoRoot, "scripts", "smoke-plugin.js"), path.join(pkgOut, archives[0])],
+    { cwd: repoRoot, encoding: "utf8" }
+  );
+  assert.ok(smokeOut !== undefined);
+});

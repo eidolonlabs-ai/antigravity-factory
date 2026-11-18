@@ -33,7 +33,7 @@ function resolvePluginSource(pluginSourceDir) {
   };
 }
 
-function upsertPluginsJson(pluginsJsonPath, entryPath) {
+function upsertPluginsJson(pluginsJsonPath, entryPath, supersedePaths = []) {
   fs.mkdirSync(path.dirname(pluginsJsonPath), { recursive: true });
 
   let data = { entries: [] };
@@ -49,6 +49,13 @@ function upsertPluginsJson(pluginsJsonPath, entryPath) {
     } catch (error) {
       throw new Error(`Invalid plugin registration JSON: ${error.message}`);
     }
+  }
+
+  const supersedeSet = new Set(supersedePaths.filter((p) => p && p !== entryPath));
+  if (supersedeSet.size > 0) {
+    data.entries = data.entries.filter(
+      (item) => !(item && typeof item === "object" && supersedeSet.has(item.path)),
+    );
   }
 
   const exists = data.entries.some(
@@ -115,6 +122,13 @@ function writeGitPreCommitHook(resolvedTarget, hookDirRef) {
   }
   fs.mkdirSync(gitHooksDir, { recursive: true });
   const preCommitPath = path.join(gitHooksDir, "pre-commit");
+  try {
+    if (fs.lstatSync(preCommitPath).isSymbolicLink()) {
+      throw new Error(`Refusing symlink git hook path: ${preCommitPath}`);
+    }
+  } catch (e) {
+    if (e.code !== "ENOENT") throw e;
+  }
   const cliPath = path.join(hookDirRef, "bin", "agy-factory.js");
   const gateLines = [
     `node "${cliPath}" audit-diff --cwd "."`,
@@ -224,7 +238,17 @@ export function runInit({
   ].map((rel) => path.join(resolvedTarget, rel));
   if (gitHook) {
     const hooksDir = resolveGitHooksDir(resolvedTarget);
-    if (hooksDir) restorePaths.push(path.join(hooksDir, "pre-commit"));
+    if (hooksDir) {
+      const preCommit = path.join(hooksDir, "pre-commit");
+      try {
+        if (fs.lstatSync(preCommit).isSymbolicLink()) {
+          throw new Error(`Refusing symlink git hook path: ${preCommit}`);
+        }
+      } catch (e) {
+        if (e.code !== "ENOENT") throw e;
+      }
+      restorePaths.push(preCommit);
+    }
   }
   const originals = restorePaths.map((p) => ({
     path: p,
@@ -244,10 +268,10 @@ export function runInit({
   }
 
   try {
-    upsertPluginsJson(
-      pluginsJsonPath,
-      mode === "link" ? pluginsParentDir : ".agents/plugins",
-    );
+    const targetEntry = mode === "link" ? pluginsParentDir : ".agents/plugins";
+    const supersedePaths =
+      mode === "link" ? [".agents/plugins"] : [pluginsParentDir];
+    upsertPluginsJson(pluginsJsonPath, targetEntry, supersedePaths);
 
     const effectivePluginRef =
       mode === "copy" ? ".agents/plugins/antigravity-factory" : pluginDir;

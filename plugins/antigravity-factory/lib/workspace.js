@@ -44,14 +44,23 @@ export function snapshotWorkspace(cwd) {
     });
     if (headResult.status === 0) head = headResult.stdout.trim();
     else {
-      git(root, ["symbolic-ref", "HEAD"]);
-      const refs = spawnSync("git", ["show-ref", "--head"], {
-        cwd: root,
-        encoding: "utf8",
-      });
-      if (refs.error || ![0, 1].includes(refs.status))
+      const sym = git(root, ["symbolic-ref", "HEAD"]).trim();
+      const refs = spawnSync(
+        "git",
+        ["for-each-ref", "--format=%(refname)", "--", sym],
+        {
+          cwd: root,
+          encoding: "utf8",
+          timeout: 15000,
+        },
+      );
+      if (
+        refs.error ||
+        refs.status !== 0 ||
+        /broken ref|fatal:/i.test(refs.stderr || "")
+      )
         throw new Error("Cannot inspect unborn Git HEAD");
-      if (refs.stdout) throw new Error("Cannot resolve Git HEAD");
+      if (refs.stdout.trim()) throw new Error("Cannot resolve Git HEAD");
     }
     index = git(root, ["ls-files", "--stage", "-z", "--", "."])
       .split("\0")
@@ -98,7 +107,43 @@ export function snapshotWorkspace(cwd) {
   }
   const digest = crypto.createHash("sha256");
   digest.update(JSON.stringify({ head, index }));
+  const parentLinkCache = new Map();
+  const findSymlinkParent = (relName) => {
+    const parts = relName.split("/");
+    let cur = "";
+    for (let i = 0; i < parts.length - 1; i += 1) {
+      cur = cur ? `${cur}/${parts[i]}` : parts[i];
+      if (!parentLinkCache.has(cur)) {
+        try {
+          const pst = fs.lstatSync(path.join(root, cur));
+          parentLinkCache.set(
+            cur,
+            pst.isSymbolicLink() ? fs.readlinkSync(path.join(root, cur)) : null,
+          );
+        } catch {
+          parentLinkCache.set(cur, null);
+        }
+      }
+      const target = parentLinkCache.get(cur);
+      if (target !== null) {
+        return { parent: cur, target };
+      }
+    }
+    return null;
+  };
   for (const name of names) {
+    const symlinkParent = findSymlinkParent(name);
+    if (symlinkParent) {
+      digest.update(
+        JSON.stringify([
+          name,
+          "symlink-parent",
+          symlinkParent.parent,
+          symlinkParent.target,
+        ]),
+      );
+      continue;
+    }
     const full = path.join(root, name);
     let st;
     try {

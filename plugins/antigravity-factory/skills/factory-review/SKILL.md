@@ -23,7 +23,7 @@ Check all five deterministic rule families (`slice-boundary-violation`, `hardcod
 
 ## Step 2: Cold-Context Semantic Review (`factory-reviewer`)
 
-Dispatch a fresh read-only `research` subagent using `../../roles/factory-reviewer.md` (with no builder history or evaluator contamination) to inspect `git status --short`, `git diff`, and untracked files for:
+Dispatch a fresh read-only `research` subagent using `../../agents/factory-reviewer.md` (with no builder history or evaluator contamination) to inspect `git status --short`, `git diff`, and untracked files for:
 1. **Injection, Validation & Secrets**: Parameterized queries, boundary validation (`400`/`422`), env-only credentials, clean `.env` hygiene.
 2. **State & Edge-Case Matrix**: Row locking (`FOR UPDATE`), idempotency keys, UTC/`as_of` temporal correctness, dual-write atomicity, UI `AbortController` + unique `data-testid` attributes.
 3. **Documentation Integrity**: Existing comments, docstrings, and types preserved unless invalidated by the diff.

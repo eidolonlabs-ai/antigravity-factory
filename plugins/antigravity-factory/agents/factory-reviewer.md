@@ -3,7 +3,7 @@ name: factory-reviewer
 description: Cold-context read-only code and security reviewer for Phase 4B (factory-review), enforcing Reproduce Before Fixing.
 subagent: true
 mainAgent: false
-tools: [read_file, search_web]
+tools: [read_file, run_command, search_web]
 ---
 
 # Role: `factory-reviewer` (Antigravity)

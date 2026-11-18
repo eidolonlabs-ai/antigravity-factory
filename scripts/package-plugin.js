@@ -11,14 +11,17 @@ if (!/^\d+\.\d+\.\d+$/.test(manifest.version))
   throw new Error("Release requires a semantic version");
 if (
   JSON.parse(fs.readFileSync(path.join(root, "package.json"))).version !==
-  manifest.version
+    manifest.version ||
+  JSON.parse(fs.readFileSync(path.join(source, "package.json"))).version !==
+    manifest.version
 )
-  throw new Error("Root and plugin versions differ");
+  throw new Error("Root, plugin manifest, and plugin package versions differ");
+const outIdx = process.argv.indexOf("--out");
+if (outIdx !== -1 && (!process.argv[outIdx + 1] || process.argv[outIdx + 1].startsWith("--"))) {
+  throw new Error("Missing directory value after --out");
+}
 const out = path.resolve(
-  process.argv[process.argv.indexOf("--out") + 1] &&
-    process.argv.includes("--out")
-    ? process.argv[process.argv.indexOf("--out") + 1]
-    : path.join(root, "dist"),
+  outIdx !== -1 ? process.argv[outIdx + 1] : path.join(root, "dist"),
 );
 fs.mkdirSync(out, { recursive: true });
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "factory-package-")),
@@ -26,6 +29,8 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), "factory-package-")),
 fs.mkdirSync(bundle);
 const files = {};
 function copy(src, dest) {
+  const base = path.basename(src);
+  if (base === ".DS_Store" || base === "node_modules") return;
   const st = fs.lstatSync(src);
   if (st.isSymbolicLink())
     throw new Error(`Bundle symlink not allowed: ${src}`);
@@ -64,6 +69,7 @@ try {
   );
   execFileSync("tar", ["-czf", archive, "-C", temp, "antigravity-factory"], {
     stdio: "pipe",
+    env: { ...process.env, COPYFILE_DISABLE: "1" },
   });
   fs.writeFileSync(
     path.join(out, `antigravity-factory-${manifest.version}.sha256.json`),

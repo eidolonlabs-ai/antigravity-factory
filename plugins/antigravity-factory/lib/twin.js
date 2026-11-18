@@ -36,7 +36,16 @@ function matchRoutePath(routePattern, actualPathname) {
     const p = patSegs[i];
     const a = actSegs[i];
     if (p.startsWith(':')) {
-      params[p.slice(1)] = decodeURIComponent(a);
+      try {
+        params[p.slice(1)] = decodeURIComponent(a);
+      } catch (err) {
+        if (err instanceof URIError) {
+          const badReq = new Error(`Malformed percent-encoding in route segment "${a}"`);
+          badReq.statusCode = 400;
+          throw badReq;
+        }
+        throw err;
+      }
     } else if (p !== a) {
       return { matched: false, params: {} };
     }
@@ -110,104 +119,117 @@ export function createTwinServer({
   };
 
   const server = http.createServer(async (req, res) => {
-    const parsedUrl = new URL(req.url || '/', 'http://localhost');
-    const pathname = parsedUrl.pathname;
-    const method = (req.method || 'GET').toUpperCase();
-
-    if (method === 'GET' && pathname === '/__twin/health') {
-      sendJson(res, 200, { ok: true, requestsCount: recordedRequests.length });
-      return;
-    }
-
-    if (method === 'GET' && pathname === '/__twin/requests') {
-      sendJson(res, 200, { requests: recordedRequests });
-      return;
-    }
-
-    if (method === 'POST' && pathname === '/__twin/reset') {
-      recordedRequests.length = 0;
-      state = structuredClone(initialState);
-      sendJson(res, 200, { ok: true, requestsCount: 0 });
-      return;
-    }
-
-    let bodyData;
     try {
-      bodyData = await readRequestBody(req, maxBodyBytes);
-    } catch (readErr) {
-      sendJson(res, 400, { error: readErr.message });
-      return;
-    }
-
-    if (bodyData.tooLarge) {
-      sendJson(res, 413, {
-        error: 'Payload Too Large',
-        maxBodyBytes,
-      });
-      return;
-    }
-
-    const { raw, json } = bodyData;
-    const query = Object.fromEntries(parsedUrl.searchParams.entries());
-    const reqRecord = {
-      method,
-      path: pathname,
-      query,
-      headers: req.headers,
-      body: json ?? raw,
-      rawBody: raw,
-      timestamp: new Date().toISOString(),
-    };
-    recordedRequests.push(reqRecord);
-    if (
-      Number.isInteger(maxRecordedRequests) &&
-      maxRecordedRequests > 0 &&
-      recordedRequests.length > maxRecordedRequests
-    ) {
-      recordedRequests.splice(0, recordedRequests.length - maxRecordedRequests);
-    }
-
-    for (const route of routes) {
-      const routeMethod = (route.method || 'GET').toUpperCase();
-      if (routeMethod !== '*' && routeMethod !== method) {
-        continue;
+      let parsedUrl;
+      try {
+        parsedUrl = new URL(req.url || '/', 'http://localhost');
+      } catch {
+        sendJson(res, 400, { error: 'Malformed request URL' });
+        return;
       }
-      const { matched, params } = matchRoutePath(route.path || '/', pathname);
-      if (!matched) {
-        continue;
-      }
+      const pathname = parsedUrl.pathname;
+      const method = (req.method || 'GET').toUpperCase();
 
-      if (typeof route.handler === 'function') {
-        try {
-          const result = await route.handler(
-            { ...reqRecord, params },
-            state
-          );
-          const status = result?.status ?? route.status ?? 200;
-          const headers = { ...(route.headers || {}), ...(result?.headers || {}) };
-          const body = result?.body !== undefined ? result.body : (result ?? { ok: true });
-          sendJson(res, status, body, headers);
-        } catch (handlerErr) {
-          sendJson(res, 500, { error: handlerErr.message || 'Twin route handler failed' });
-        }
+      if (method === 'GET' && pathname === '/__twin/health') {
+        sendJson(res, 200, { ok: true, requestsCount: recordedRequests.length });
         return;
       }
 
-      const status = route.status ?? 200;
-      const headers = route.headers || {};
-      const body =
-        route.response !== undefined
-          ? route.response
-          : { ok: true, matched: route.path, params };
-      sendJson(res, status, body, headers);
-      return;
-    }
+      if (method === 'GET' && pathname === '/__twin/requests') {
+        sendJson(res, 200, { requests: recordedRequests });
+        return;
+      }
 
-    sendJson(res, 404, {
-      error: 'No Digital Twin route matched request',
-      method,
-      path: pathname,
-    });
+      if (method === 'POST' && pathname === '/__twin/reset') {
+        recordedRequests.length = 0;
+        state = structuredClone(initialState);
+        sendJson(res, 200, { ok: true, requestsCount: 0 });
+        return;
+      }
+
+      let bodyData;
+      try {
+        bodyData = await readRequestBody(req, maxBodyBytes);
+      } catch (readErr) {
+        sendJson(res, 400, { error: readErr.message });
+        return;
+      }
+
+      if (bodyData.tooLarge) {
+        sendJson(res, 413, {
+          error: 'Payload Too Large',
+          maxBodyBytes,
+        });
+        return;
+      }
+
+      const { raw, json } = bodyData;
+      const query = Object.fromEntries(parsedUrl.searchParams.entries());
+      const reqRecord = {
+        method,
+        path: pathname,
+        query,
+        headers: req.headers,
+        body: json ?? raw,
+        rawBody: raw,
+        timestamp: new Date().toISOString(),
+      };
+      recordedRequests.push(reqRecord);
+      if (
+        Number.isInteger(maxRecordedRequests) &&
+        maxRecordedRequests > 0 &&
+        recordedRequests.length > maxRecordedRequests
+      ) {
+        recordedRequests.splice(0, recordedRequests.length - maxRecordedRequests);
+      }
+
+      for (const route of routes) {
+        const routeMethod = (route.method || 'GET').toUpperCase();
+        if (routeMethod !== '*' && routeMethod !== method) {
+          continue;
+        }
+        const { matched, params } = matchRoutePath(route.path || '/', pathname);
+        if (!matched) {
+          continue;
+        }
+
+        if (typeof route.handler === 'function') {
+          try {
+            const result = await route.handler(
+              { ...reqRecord, params },
+              state
+            );
+            const status = result?.status ?? route.status ?? 200;
+            const headers = { ...(route.headers || {}), ...(result?.headers || {}) };
+            const body = result?.body !== undefined ? result.body : (result ?? { ok: true });
+            sendJson(res, status, body, headers);
+          } catch (handlerErr) {
+            sendJson(res, 500, { error: handlerErr.message || 'Twin route handler failed' });
+          }
+          return;
+        }
+
+        const status = route.status ?? 200;
+        const headers = route.headers || {};
+        const body =
+          route.response !== undefined
+            ? route.response
+            : { ok: true, matched: route.path, params };
+        sendJson(res, status, body, headers);
+        return;
+      }
+
+      sendJson(res, 404, {
+        error: 'No Digital Twin route matched request',
+        method,
+        path: pathname,
+      });
+    } catch (reqErr) {
+      const status = Number.isInteger(reqErr?.statusCode) ? reqErr.statusCode : 500;
+      if (!res.headersSent) {
+        sendJson(res, status, { error: reqErr?.message || 'Twin request error' });
+      }
+    }
   });
 
   return {

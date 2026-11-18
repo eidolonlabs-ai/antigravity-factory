@@ -755,3 +755,258 @@ test('PreToolUse guard passes all shared contract/guard-cases.json vectors and e
     'force_ask'
   );
 });
+
+test('PreToolUse guard enforces frozen/sharedPaths, fail-closed specs, payload.cwd slice scoping, and multi-root workspacePaths', async (t) => {
+  const os = await import('node:os');
+  const rootA = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-hooks-roota-'));
+  const rootB = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-hooks-rootb-'));
+  t.after(() => {
+    fs.rmSync(rootA, { recursive: true, force: true });
+    fs.rmSync(rootB, { recursive: true, force: true });
+  });
+
+  fs.mkdirSync(path.join(rootB, '.factory'), { recursive: true });
+  fs.mkdirSync(path.join(rootB, 'api'), { recursive: true });
+  fs.mkdirSync(path.join(rootB, 'web'), { recursive: true });
+  fs.mkdirSync(path.join(rootB, 'contracts'), { recursive: true });
+  fs.mkdirSync(path.join(rootB, 'docs'), { recursive: true });
+  fs.writeFileSync(
+    path.join(rootB, '.factory', 'plan.json'),
+    JSON.stringify({ frozen: ['contracts/**'] })
+  );
+  fs.writeFileSync(
+    path.join(rootB, '.factory', 'spec.json'),
+    JSON.stringify({
+      slices: {
+        api: { allowPaths: ['api/**'] },
+        web: { allowPaths: ['web/**'] },
+      },
+      sharedPaths: ['docs/**'],
+    })
+  );
+
+  const prevSlice = process.env.FACTORY_SLICE;
+  process.env.FACTORY_SLICE = 'api';
+  t.after(() => {
+    if (prevSlice === undefined) delete process.env.FACTORY_SLICE;
+    else process.env.FACTORY_SLICE = prevSlice;
+  });
+
+  // Relative path resolved against payload.cwd inside secondary workspacePaths[1]
+  assert.equal(
+    evaluatePreToolUse({
+      cwd: path.join(rootB, 'api'),
+      workspacePaths: [rootA, rootB],
+      toolCall: { name: 'write_file', args: { Path: 'index.js' } },
+    }).decision,
+    'allow'
+  );
+  assert.equal(
+    evaluatePreToolUse({
+      cwd: path.join(rootB, 'api'),
+      workspacePaths: [rootA, rootB],
+      toolCall: { name: 'write_file', args: { Path: '../web/app.js' } },
+    }).decision,
+    'deny'
+  );
+  // Frozen contract and shared paths
+  assert.equal(
+    evaluatePreToolUse({
+      cwd: rootB,
+      workspacePaths: [rootA, rootB],
+      toolCall: { name: 'write_file', args: { Path: 'contracts/openapi.json' } },
+    }).decision,
+    'deny'
+  );
+  const sharedDecision = evaluatePreToolUse({
+    cwd: rootB,
+    workspacePaths: [rootA, rootB],
+    toolCall: { name: 'write_file', args: { Path: 'docs/readme.md' } },
+  }).decision;
+  assert.ok(sharedDecision === 'force_ask' || sharedDecision === 'deny');
+
+  // Protected .env on second workspace root is still blocked
+  assert.equal(
+    evaluatePreToolUse({
+      cwd: rootA,
+      workspacePaths: [rootA, rootB],
+      toolCall: { name: 'write_file', args: { Path: path.join(rootB, '.env') } },
+    }).decision,
+    'deny'
+  );
+
+  // Unknown slice fails closed
+  process.env.FACTORY_SLICE = 'nonexistent';
+  assert.equal(
+    evaluatePreToolUse({
+      cwd: rootB,
+      workspacePaths: [rootB],
+      toolCall: { name: 'write_file', args: { Path: 'api/index.js' } },
+    }).decision,
+    'deny'
+  );
+
+  // Malformed .factory/spec.json fails closed when FACTORY_SLICE is active
+  process.env.FACTORY_SLICE = 'api';
+  fs.writeFileSync(path.join(rootB, '.factory', 'spec.json'), '{broken json');
+  assert.equal(
+    evaluatePreToolUse({
+      cwd: rootB,
+      workspacePaths: [rootB],
+      toolCall: { name: 'write_file', args: { Path: 'api/index.js' } },
+    }).decision,
+    'deny'
+  );
+});
+
+test('PreToolUse guard blocks symlink escapes, dangling symlinks, ln -s protected targets, and newly covered shell bypasses', async (t) => {
+  const os = await import('node:os');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-hooks-sym-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-hooks-out-'));
+  t.after(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
+
+  fs.mkdirSync(path.join(root, '.git', 'hooks'), { recursive: true });
+  fs.mkdirSync(path.join(root, '.factory'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'api'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'web'), { recursive: true });
+  fs.writeFileSync(path.join(outside, 'secret.txt'), 'secret');
+  fs.writeFileSync(
+    path.join(root, '.factory', 'spec.json'),
+    JSON.stringify({
+      slices: {
+        api: { allowPaths: ['api/**'] },
+        web: { allowPaths: ['web/**'] },
+      },
+    })
+  );
+
+  fs.symlinkSync(path.join(root, '.git'), path.join(root, 'gitlink'));
+  fs.symlinkSync(path.join(outside, 'nonexistent-leaf'), path.join(root, 'dangling-out'));
+  fs.symlinkSync(path.join(root, 'web', 'app.js'), path.join(root, 'api', 'cross-slice.js'));
+
+  assert.equal(
+    evaluatePreToolUse({
+      cwd: root,
+      workspacePaths: [root],
+      toolCall: { name: 'write_file', args: { Path: 'gitlink/config' } },
+    }).decision,
+    'deny'
+  );
+  assert.equal(
+    evaluatePreToolUse({
+      cwd: root,
+      workspacePaths: [root],
+      toolCall: { name: 'write_file', args: { Path: 'dangling-out' } },
+    }).decision,
+    'deny'
+  );
+  assert.equal(
+    evaluatePreToolUse({
+      cwd: root,
+      workspacePaths: [root],
+      toolCall: { name: 'run_command', args: { CommandLine: `ln -s ${outside}/secret.txt api/leak.txt` } },
+    }).decision,
+    'deny'
+  );
+  assert.equal(
+    evaluatePreToolUse({
+      cwd: root,
+      workspacePaths: [root],
+      toolCall: { name: 'run_command', args: { CommandLine: 'ln -s .git/hooks/post-checkout api/hooklink' } },
+    }).decision,
+    'deny'
+  );
+
+  // Slice check resolves symlink target inside api/ pointing to web/app.js
+  const prevSlice = process.env.FACTORY_SLICE;
+  process.env.FACTORY_SLICE = 'api';
+  t.after(() => {
+    if (prevSlice === undefined) delete process.env.FACTORY_SLICE;
+    else process.env.FACTORY_SLICE = prevSlice;
+  });
+  assert.equal(
+    evaluatePreToolUse({
+      cwd: root,
+      workspacePaths: [root],
+      toolCall: { name: 'write_file', args: { Path: 'api/cross-slice.js' } },
+    }).decision,
+    'deny'
+  );
+  assert.equal(
+    evaluatePreToolUse({
+      cwd: root,
+      workspacePaths: [root],
+      toolCall: { name: 'run_command', args: { CommandLine: 'sed -i "" "s/a/b/" web/app.js' } },
+    }).decision,
+    'deny'
+  );
+  assert.equal(
+    evaluatePreToolUse({
+      cwd: root,
+      workspacePaths: [root],
+      toolCall: { name: 'run_command', args: { CommandLine: 'sed -i "" "s/a/b/" api/app.js' } },
+    }).decision,
+    'allow'
+  );
+  delete process.env.FACTORY_SLICE;
+
+  // git push & bypass vectors via live evaluatePreToolUse
+  assert.equal(
+    evaluatePreToolUse({
+      cwd: root,
+      workspacePaths: [root],
+      toolCall: { name: 'run_command', args: { CommandLine: 'git push origin main' } },
+    }).decision,
+    'force_ask'
+  );
+
+  for (const cmd of [
+    "$(echo '(') ; docker system prune -af",
+    'echo foo>.env',
+    'cat <> .env',
+    'echo pwn >& .env',
+    'sh -o errexit -c "docker system prune -af"',
+    'bash -c -- "rm -rf /"',
+    '{ docker system prune -af; }',
+    '(docker system prune -af)',
+    'eval "docker system prune -af"',
+    'cd .factory ; echo bad > verify-receipt.json',
+    'install -m 644 src.txt .env',
+    'cp -ft .factory a.txt',
+    'sed -i --expression=s/a/b/ .env',
+    'git config core.hooksPath /tmp/hooks',
+    'git commit -n -m "bypass"',
+    'git checkout HEAD .env',
+  ]) {
+    assert.equal(
+      evaluatePreToolUse({
+        cwd: root,
+        workspacePaths: [root],
+        toolCall: { name: 'run_command', args: { CommandLine: cmd } },
+      }).decision,
+      'deny',
+      `Expected deny for ${cmd}`
+    );
+  }
+
+  // cd inside isolated subshell should not poison subsequent workspace commands; -m "-n" is allowed
+  assert.equal(
+    evaluatePreToolUse({
+      cwd: root,
+      workspacePaths: [root],
+      toolCall: { name: 'run_command', args: { CommandLine: '(cd .factory && true) ; echo ok > ok.txt' } },
+    }).decision,
+    'allow'
+  );
+  assert.equal(
+    evaluatePreToolUse({
+      cwd: root,
+      workspacePaths: [root],
+      toolCall: { name: 'run_command', args: { CommandLine: 'git commit -m "-n"' } },
+    }).decision,
+    'allow'
+  );
+});

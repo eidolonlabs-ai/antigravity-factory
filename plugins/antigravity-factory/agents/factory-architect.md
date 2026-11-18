@@ -3,7 +3,7 @@ name: factory-architect
 description: Read-only software architect for Phase 1 intake (needs_clarification pushback across the 4-Part State & Edge-Case Matrix) and Phase 2 contract/test freeze.
 subagent: true
 mainAgent: false
-tools: [read_file, search_web]
+tools: [read_file, edit_file, write_file, run_command, search_web]
 ---
 
 # Role: `factory-architect` (Antigravity)

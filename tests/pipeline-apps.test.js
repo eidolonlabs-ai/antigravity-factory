@@ -1029,3 +1029,52 @@ test('E2E Pipeline App 8: Non-destructive init, git worktrees, and Twin CLI boun
     await started.close();
   }
 });
+
+test('twin handles malformed percent-encoding with HTTP 400 and loadTwinRoutesFromFile loads JSON routes', async (t) => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const os = await import('node:os');
+  const { pathToFileURL } = await import('node:url');
+
+  const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+  const { createTwinServer, loadTwinRoutesFromFile } = await import(
+    pathToFileURL(path.join(repoRoot, 'plugins/antigravity-factory/lib/twin.js')).href
+  );
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-twin-routes-'));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+
+  const routesFile = path.join(tmpDir, 'routes.json');
+  fs.writeFileSync(
+    routesFile,
+    JSON.stringify([
+      { method: 'GET', path: '/v1/charges/:id', status: 200, body: { ok: true } },
+    ])
+  );
+  const routes = loadTwinRoutesFromFile(routesFile);
+  assert.equal(routes.length, 1);
+
+  const created = createTwinServer({ routes, port: 0, host: '127.0.0.1' });
+  let baseUrl;
+  let closeFn;
+  if (typeof created.start === 'function') {
+    const info = await created.start();
+    baseUrl = info.url || `http://127.0.0.1:${info.port}`;
+    closeFn = () => (info.close ? info.close() : created.close?.());
+  } else {
+    const srv = created.server || created;
+    await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
+    const addr = srv.address();
+    baseUrl = `http://127.0.0.1:${addr.port}`;
+    closeFn = () => new Promise((resolve) => srv.close(resolve));
+  }
+
+  try {
+    const badRes = await fetch(`${baseUrl}/v1/charges/%E0%A4%A`);
+    assert.equal(badRes.status, 400);
+    const okRes = await fetch(`${baseUrl}/v1/charges/ch_123`);
+    assert.equal(okRes.status, 200);
+  } finally {
+    await closeFn();
+  }
+});

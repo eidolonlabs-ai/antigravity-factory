@@ -149,3 +149,52 @@ test("human landing output explains conflicts and recovery for preserved concurr
   assert.match(output, /land-recovery-.*\.json/);
   assert.match(output, /preserved|manual/i);
 });
+
+test('runLand lands committed git rm + untracked recreation and returns full report shape on early audit block', async (t) => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { execFileSync } = await import('node:child_process');
+  const { pathToFileURL } = await import('node:url');
+
+  const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+  const { runLand } = await import(
+    pathToFileURL(path.join(repoRoot, 'plugins/antigravity-factory/lib/land.js')).href
+  );
+  const { runVerify } = await import(
+    pathToFileURL(path.join(repoRoot, 'plugins/antigravity-factory/lib/verify.js')).href
+  );
+
+  // 1. Committed git rm src/app.js followed by untracked src/app.js recreation
+  const env1 = setup(t);
+  execFileSync('git', ['rm', '-f', 'src/app.js'], { cwd: env1.worker });
+  execFileSync('git', ['commit', '-q', '-m', 'remove app.js'], { cwd: env1.worker });
+  fs.mkdirSync(path.join(env1.worker, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(env1.worker, 'src', 'app.js'), 'export const version = "v2";\n');
+  runVerify({ cwd: env1.worker });
+
+  const landOk = runLand({
+    cwd: env1.cwd,
+    worktree: env1.worker,
+    allowPaths: ['src/**'],
+  });
+  assert.equal(landOk.ok, true);
+  assert.match(
+    fs.readFileSync(path.join(env1.cwd, 'src', 'app.js'), 'utf8'),
+    /v2/
+  );
+
+  // 2. Early audit block (out-of-slice change) returns complete report schema
+  const env2 = setup(t);
+  fs.writeFileSync(path.join(env2.worker, 'outside.txt'), 'out of slice\n');
+  const blocked = runLand({
+    cwd: env2.cwd,
+    worktree: env2.worker,
+    allowPaths: ['src/**'],
+  });
+  assert.equal(blocked.ok, false);
+  assert.ok(Array.isArray(blocked.conflicts));
+  assert.equal(blocked.verification, null);
+  assert.equal(typeof blocked.rolledBack, 'boolean');
+  assert.ok(Array.isArray(blocked.rollbackConflicts));
+  assert.ok('requiresReview' in blocked);
+});

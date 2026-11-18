@@ -140,3 +140,157 @@ test("policy validates command bounds, mappings and schema", (t) => {
     assert.throws(() => runVerify({ cwd: project(t, { verification }) }));
   assert.throws(() => runVerify({ cwd: project(t, { schemaVersion: 99 }) }));
 });
+
+test("records, workspace, verify hygiene/polyglot/autoInstall, and compose isolation hardening", async (t) => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const os = await import("node:os");
+  const { execFileSync } = await import("node:child_process");
+  const { pathToFileURL } = await import("node:url");
+
+  const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+  const { readRecord } = await import(
+    pathToFileURL(path.join(repoRoot, "plugins/antigravity-factory/lib/records.js")).href
+  );
+  const { evaluateStatus } = await import(
+    pathToFileURL(path.join(repoRoot, "plugins/antigravity-factory/lib/status.js")).href
+  );
+  const { snapshotWorkspace } = await import(
+    pathToFileURL(path.join(repoRoot, "plugins/antigravity-factory/lib/workspace.js")).href
+  );
+  const { inspectComposeIsolation } = await import(
+    pathToFileURL(path.join(repoRoot, "plugins/antigravity-factory/lib/verify.js")).href
+  );
+
+  // 1. readRecord rejects symlinked receipt and evaluateStatus reports UNVERIFIED
+  const recDir = fs.mkdtempSync(path.join(os.tmpdir(), "agy-rec-"));
+  const outSecret = path.join(os.tmpdir(), `agy-rec-target-${Date.now()}.json`);
+  t.after(() => {
+    fs.rmSync(recDir, { recursive: true, force: true });
+    fs.rmSync(outSecret, { force: true });
+  });
+  fs.writeFileSync(
+    outSecret,
+    JSON.stringify({ status: "PASS", workspaceDigest: "abc", expiresAt: "2099-01-01T00:00:00Z" })
+  );
+  fs.mkdirSync(path.join(recDir, ".factory"), { recursive: true });
+  fs.symlinkSync(outSecret, path.join(recDir, ".factory", "verify-receipt.json"));
+  assert.equal(readRecord(recDir, "verify-receipt.json"), null);
+  assert.equal(readRecord(recDir, "../outside.json"), null);
+  assert.equal(evaluateStatus({ cwd: recDir }).outcome, "UNVERIFIED");
+
+  // 2. snapshotWorkspace: orphan branch with other branches + symlinked parent dir isolation
+  const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), "agy-ws-"));
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "agy-ws-out-"));
+  t.after(() => {
+    fs.rmSync(wsDir, { recursive: true, force: true });
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+  });
+  fs.writeFileSync(path.join(outsideDir, "secret.txt"), "outside-secret");
+  execFileSync("git", ["init", "-q"], { cwd: wsDir });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: wsDir });
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: wsDir });
+  fs.mkdirSync(path.join(wsDir, "src"), { recursive: true });
+  fs.writeFileSync(path.join(wsDir, "src", "secret.txt"), "tracked-inside\n");
+  execFileSync("git", ["add", "src/secret.txt"], { cwd: wsDir });
+  execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: wsDir });
+  execFileSync("git", ["checkout", "-q", "--orphan", "fresh-orphan"], { cwd: wsDir });
+  fs.rmSync(path.join(wsDir, "src"), { recursive: true, force: true });
+  fs.symlinkSync(outsideDir, path.join(wsDir, "src"));
+  const snap = snapshotWorkspace(wsDir);
+  assert.match(snap.digest, /^[a-f0-9]{64}$/);
+  assert.equal(typeof snap.hasChanges, "boolean");
+
+  // 3. verify hygiene flags unignored .env.local, nested api/.env, tracked id_ecdsa/id_dsa,
+  //    and does not auto-run npm install by default when node_modules is absent
+  const hygDir = fs.mkdtempSync(path.join(os.tmpdir(), "agy-hyg-"));
+  t.after(() => fs.rmSync(hygDir, { recursive: true, force: true }));
+  execFileSync("git", ["init", "-q"], { cwd: hygDir });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: hygDir });
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: hygDir });
+  fs.writeFileSync(
+    path.join(hygDir, "package.json"),
+    JSON.stringify({
+      name: "hyg-app",
+      dependencies: { "nonexistent-pkg-for-test": "^1.0.0" },
+      scripts: { test: "node -e \"process.exit(0)\"" },
+    })
+  );
+  fs.mkdirSync(path.join(hygDir, "api"), { recursive: true });
+  fs.writeFileSync(path.join(hygDir, ".env.local"), "SECRET=123\n");
+  fs.writeFileSync(path.join(hygDir, "api", ".env"), "API_KEY=456\n");
+  fs.writeFileSync(path.join(hygDir, "id_ecdsa"), "dummy-key\n");
+  execFileSync("git", ["add", "package.json", "id_ecdsa"], { cwd: hygDir });
+  execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: hygDir });
+  const hygResult = runVerify({ cwd: hygDir, requireTests: true });
+  assert.equal(hygResult.ok, false);
+  const hygieneCheck = hygResult.checks.find((c) => c.id === "hygiene");
+  assert.equal(hygieneCheck?.status, "FAIL");
+  const hygSummary = hygieneCheck.output;
+  assert.match(hygSummary, /\.env\.local/);
+  assert.match(hygSummary, /api\/\.env/);
+  assert.match(hygSummary, /id_ecdsa/);
+  assert.ok(!fs.existsSync(path.join(hygDir, "node_modules")));
+
+  // 4. polyglot requiredChecks fail when sibling language test check at "." is NOT_RUN
+  const polyDir = fs.mkdtempSync(path.join(os.tmpdir(), "agy-poly-"));
+  t.after(() => fs.rmSync(polyDir, { recursive: true, force: true }));
+  fs.writeFileSync(
+    path.join(polyDir, "package.json"),
+    JSON.stringify({ name: "poly", scripts: { test: "node -e \"process.exit(0)\"" } })
+  );
+  fs.writeFileSync(path.join(polyDir, "pyproject.toml"), "[project]\nname='w'\n");
+  fs.writeFileSync(
+    path.join(polyDir, ".factory.json"),
+    JSON.stringify({
+      verification: {
+        requiredChecks: [{ component: ".", category: "test" }],
+      },
+    })
+  );
+  const polyRes = runVerify({ cwd: polyDir, requireTests: false });
+  assert.equal(polyRes.ok, false);
+  assert.equal(
+    polyRes.checks.find((c) => c.id === "required:.:test")?.status,
+    "FAIL"
+  );
+
+  // 5. inspectComposeIsolation flags dangerous compose options and external paths
+  const dirty = inspectComposeIsolation(
+    {
+      services: {
+        app: {
+          image: "node:20",
+          build: { context: "/etc" },
+          env_file: ["/etc/shadow"],
+          cap_add: ["SYS_ADMIN"],
+          security_opt: ["apparmor=unconfined"],
+          network_mode: "host",
+          pid: "container:db",
+          devices: ["/dev/kmsg:/dev/kmsg"],
+          volumes_from: ["other"],
+          volumes: ["/var/lib:/data"],
+        },
+      },
+      volumes: {
+        sockvol: { driver_opts: { device: "/var/run/docker.sock" } },
+      },
+    },
+    { workspaceRoot: hygDir }
+  );
+  const joined = dirty.join("\n");
+  for (const needle of [
+    "cap_add",
+    "security_opt",
+    "network_mode",
+    "pid",
+    "devices",
+    "volumes_from",
+    "driver_opts",
+    "build context",
+    "env_file",
+    "bind mount",
+  ]) {
+    assert.ok(joined.includes(needle), `Expected compose finding for ${needle}, got:\n${joined}`);
+  }
+});

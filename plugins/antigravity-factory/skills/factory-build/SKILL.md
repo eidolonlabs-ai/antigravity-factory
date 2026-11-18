@@ -9,7 +9,7 @@ description: >-
 
 # Factory Build (Phase 3)
 
-Implement approved slices inside isolated boundaries using Antigravity's native execution primitives (`factory-builder` role in `../../roles/factory-builder.md`).
+Implement approved slices inside isolated boundaries using Antigravity's native execution primitives (`factory-builder` agent in `../../agents/factory-builder.md`). Resolve `FACTORY_CLI` once (`node ./bin/agy-factory.js`, `node ./.agents/plugins/antigravity-factory/bin/agy-factory.js`, or `node <plugin-dir>/bin/agy-factory.js`) and substitute the resolved path into worker briefs.
 
 ## Pre-Flight Spec & Test Check (Pushback Gate)
 

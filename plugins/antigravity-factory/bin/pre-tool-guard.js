@@ -7,699 +7,154 @@ import {
   evaluateShellCommand,
   inspectTargetPath,
 } from "../lib/guard.js";
+import {
+  matchesAllowedPath,
+  normalizeAllowPathsList,
+} from "../lib/spec.js";
 
 export { decideContractCase };
 
-const ALLOWED_ENV_TEMPLATES = new Set([
-  ".env.example",
-  ".env.sample",
-  ".env.template",
-  ".env.test",
-]);
-
-const PRIVATE_KEY_BASENAMES = new Set([
-  "id_rsa",
-  "id_ed25519",
-  "id_ecdsa",
-  "id_dsa",
-]);
-
-const CATASTROPHIC_RM_TARGETS = new Set([
-  "/",
-  "/*",
-  "~",
-  "~/",
-  "~/*",
-  "$HOME",
-  "$HOME/",
-  "$HOME/*",
-  "${HOME}",
-  "${HOME}/",
-  "${HOME}/*",
-]);
-
-const GIT_OPTIONS_WITH_VALUE = new Set([
-  "-C",
-  "-c",
-  "--git-dir",
-  "--work-tree",
-  "--namespace",
-  "--config-env",
-]);
-
-function stripWrappingQuotes(token) {
-  if (
-    (token.startsWith('"') && token.endsWith('"')) ||
-    (token.startsWith("'") && token.endsWith("'"))
-  ) {
-    return token.slice(1, -1).trim();
-  }
-  return token;
+function isWithinDir(rootDir, targetPath) {
+  const rel = path.relative(rootDir, targetPath);
+  return (
+    rel === "" ||
+    (!path.isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${path.sep}`))
+  );
 }
 
-function tokenizeShellSegment(segment) {
-  const matches = segment.match(/(?:"[^"]*"|'[^']*'|[^\s"']+)+/g);
-  return matches ? matches.map(stripWrappingQuotes) : [];
+function collectWorkspaceRoots(payload) {
+  const raw = [];
+  if (Array.isArray(payload.workspacePaths)) {
+    for (const p of payload.workspacePaths) {
+      if (typeof p === "string" && p.trim()) raw.push(path.resolve(p));
+    }
+  }
+  if (raw.length === 0) {
+    const fallback = payload.workspaceRoot || payload.cwd || process.cwd();
+    raw.push(path.resolve(String(fallback)));
+  }
+  return [...new Set(raw)];
 }
 
-function splitShellSegments(commandLine) {
-  const segments = [];
-  let current = "";
-  let quote = null;
-
-  for (let i = 0; i < commandLine.length; i += 1) {
-    const ch = commandLine[i];
-    const prev = i > 0 ? commandLine[i - 1] : "";
-
-    if (quote === "'") {
-      current += ch;
-      if (ch === "'") {
-        quote = null;
-      }
-      continue;
+function pickWorkspaceRoot(roots, targetPath, baseCwd) {
+  if (roots.length === 1 || !targetPath) return roots[0];
+  const candidate = path.isAbsolute(targetPath)
+    ? path.resolve(targetPath)
+    : path.resolve(baseCwd || roots[0], targetPath);
+  for (const root of roots) {
+    if (isWithinDir(root, candidate)) return root;
+    try {
+      const realRoot = fs.realpathSync(root);
+      if (isWithinDir(realRoot, candidate)) return root;
+    } catch {
+      // Ignore nonexistent virtual test roots
     }
-
-    if (quote === '"') {
-      if (ch === '"' && prev !== "\\") {
-        quote = null;
-        current += ch;
-        continue;
-      }
-      if (ch === "`" && prev !== "\\") {
-        let sub = "";
-        i += 1;
-        while (i < commandLine.length) {
-          if (commandLine[i] === "`" && commandLine[i - 1] !== "\\") {
-            break;
-          }
-          sub += commandLine[i];
-          i += 1;
-        }
-        if (sub.trim()) {
-          segments.push(...splitShellSegments(sub));
-        }
-        continue;
-      }
-      if (ch === "$" && commandLine[i + 1] === "(" && prev !== "\\") {
-        let sub = "";
-        let depth = 1;
-        i += 2;
-        while (i < commandLine.length && depth > 0) {
-          if (commandLine[i] === "(" && commandLine[i - 1] !== "\\") depth += 1;
-          else if (commandLine[i] === ")" && commandLine[i - 1] !== "\\") depth -= 1;
-          if (depth > 0) sub += commandLine[i];
-          i += 1;
-        }
-        i -= 1;
-        if (sub.trim()) {
-          segments.push(...splitShellSegments(sub));
-        }
-        continue;
-      }
-      current += ch;
-      continue;
-    }
-
-    if (ch === '"' || ch === "'") {
-      quote = ch;
-      current += ch;
-      continue;
-    }
-
-    if (ch === "$" && commandLine[i + 1] === "(" && prev !== "\\") {
-      let sub = "";
-      let depth = 1;
-      i += 2;
-      while (i < commandLine.length && depth > 0) {
-        if (commandLine[i] === "(" && commandLine[i - 1] !== "\\") depth += 1;
-        else if (commandLine[i] === ")" && commandLine[i - 1] !== "\\") depth -= 1;
-        if (depth > 0) sub += commandLine[i];
-        i += 1;
-      }
-      i -= 1;
-      if (sub.trim()) {
-        segments.push(...splitShellSegments(sub));
-      }
-      continue;
-    }
-
-    if (
-      (ch === ";" || ch === "\n" || ch === "(" || ch === ")" || ch === "`") &&
-      prev !== "\\"
-    ) {
-      if (current.trim()) segments.push(current.trim());
-      current = "";
-      continue;
-    }
-
-    if ((ch === "&" || ch === "|") && commandLine[i + 1] === ch) {
-      if (current.trim()) segments.push(current.trim());
-      current = "";
-      i += 1;
-      continue;
-    }
-
-    if (ch === "|" || ch === "&") {
-      if (current.trim()) segments.push(current.trim());
-      current = "";
-      continue;
-    }
-
-    current += ch;
   }
-
-  if (current.trim()) {
-    segments.push(current.trim());
-  }
-
-  return segments;
+  return roots[0];
 }
 
-function stripCommandPrefixes(tokens) {
-  let idx = 0;
-  while (idx < tokens.length) {
-    const tok = tokens[idx];
-    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tok)) {
-      idx += 1;
-      continue;
-    }
-    if (tok === "sudo" || tok === "command" || tok === "env") {
-      idx += 1;
-      while (tok === "sudo" && idx < tokens.length && tokens[idx].startsWith("-")) {
-        idx += 1;
-      }
-      continue;
-    }
-    break;
-  }
-  return tokens.slice(idx);
-}
-
-function normalizeRmTarget(rawTarget) {
-  const trimmed = rawTarget.trim();
-  if (!trimmed) return "";
-
-  for (const homePrefix of ["~", "$HOME", "${HOME}"]) {
-    if (trimmed === homePrefix) return homePrefix;
-    if (trimmed.startsWith(`${homePrefix}/`)) {
-      const suffix = trimmed.slice(homePrefix.length);
-      if (/^\/+\*$/.test(suffix)) {
-        return `${homePrefix}/*`;
-      }
-      const normSuffix = path.posix.normalize(suffix);
-      if (normSuffix === "/" || normSuffix === "/.") {
-        return `${homePrefix}/`;
-      }
-      const cleanSuffix = normSuffix.replace(/\/+$/, "");
-      return `${homePrefix}${cleanSuffix}`;
-    }
-  }
-
-  if (/^\/+\*$/.test(trimmed)) {
-    return "/*";
-  }
-
-  if (trimmed.startsWith("/")) {
-    const norm = path.posix.normalize(trimmed);
-    if (norm === "/") return "/";
-    return norm.replace(/\/+$/, "") || "/";
-  }
-
-  const normRel = path.posix.normalize(trimmed);
-  return normRel.length > 1 ? normRel.replace(/\/+$/, "") : normRel;
-}
-
-function inspectFileTarget(rawPath) {
-  const guardResult = inspectTargetPath(rawPath, { respectOutside: false });
-  if (guardResult.decision !== "allow") {
-    return guardResult;
-  }
-  if (!rawPath || typeof rawPath !== "string") {
-    return { decision: "allow" };
-  }
-
-  const slashNormalized = rawPath.trim().replace(/\\/g, "/");
-  if (!slashNormalized) {
-    return { decision: "allow" };
-  }
-
-  const normalized =
-    path.posix.normalize(slashNormalized).replace(/\/+$/, "") || "/";
-
-  if (/(^|\/)\.git\/(config|HEAD)$/i.test(normalized)) {
+function readJsonFileStrict(filePath) {
+  if (!fs.existsSync(filePath)) return { exists: false, data: null };
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (err) {
     return {
-      decision: "deny",
-      reason: `Blocked modification of protected Git metadata file: ${normalized}`,
+      exists: true,
+      error: `Invalid JSON in ${path.basename(filePath)}: ${err.message}`,
     };
   }
-
-  if (/(^|\/)\.factory(\/|$)/i.test(normalized)) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return {
-      decision: "deny",
-      reason: `Blocked direct modification of protected factory verification state (${normalized}). Run "agy-factory verify" instead.`,
+      exists: true,
+      error: `Invalid object structure in ${path.basename(filePath)}.`,
     };
   }
-
-  const base = path.posix.basename(normalized);
-  const lowerBase = base.toLowerCase();
-
-  if (
-    /(^|\/)holdout(\/|$)/i.test(normalized) ||
-    /\.holdout\.(test|spec)\.[a-z0-9]+$/i.test(lowerBase)
-  ) {
-    return {
-      decision: "deny",
-      reason: `Blocked modification of protected holdout test suite (${normalized}). Holdout tests cannot be edited by builder agents.`,
-    };
-  }
-
-  if (
-    (lowerBase === ".env" || lowerBase.startsWith(".env.")) &&
-    !ALLOWED_ENV_TEMPLATES.has(lowerBase)
-  ) {
-    return {
-      decision: "deny",
-      reason: `Blocked write to secret environment file (${base}). Update .env.example instead or edit secrets manually.`,
-    };
-  }
-
-  if (
-    PRIVATE_KEY_BASENAMES.has(lowerBase) ||
-    lowerBase.endsWith(".pem") ||
-    lowerBase.endsWith(".key")
-  ) {
-    return {
-      decision: "deny",
-      reason: `Blocked write to private key file (${base}).`,
-    };
-  }
-
-  return { decision: "allow" };
+  return { exists: true, data: parsed };
 }
 
-const SHELL_WRAPPER_CMDS = new Set(["sh", "bash", "zsh", "dash", "ksh"]);
-
-function evaluateTargetPaths(paths, { workspaceRoot, activeSlice } = {}) {
-  for (const targetPath of paths) {
-    if (!targetPath) continue;
-    const targetCheck = inspectFileTarget(targetPath);
-    if (targetCheck.decision === "deny") {
-      return targetCheck;
-    }
-    if (activeSlice) {
-      const sliceCheck = inspectSliceOwnership(targetPath, workspaceRoot, activeSlice);
-      if (sliceCheck.decision === "deny") {
-        return sliceCheck;
-      }
-    }
-  }
-  return null;
-}
-
-function extractTargetDirDestinations(args) {
-  const targets = [];
-  let hasTargetDirFlag = false;
-  const positional = [];
-
-  for (let i = 0; i < args.length; i += 1) {
-    const tok = args[i];
-    if (tok === "-t" || tok === "--target-directory") {
-      hasTargetDirFlag = true;
-      if (args[i + 1]) {
-        targets.push(args[i + 1]);
-        i += 1;
-      }
-    } else if (tok.startsWith("--target-directory=")) {
-      hasTargetDirFlag = true;
-      const val = tok.slice("--target-directory=".length);
-      if (val) targets.push(val);
-    } else if (!tok.startsWith("-")) {
-      positional.push(tok);
-    }
-  }
-
-  if (hasTargetDirFlag) {
-    return targets;
-  }
-  return positional.length > 1 ? [positional[positional.length - 1]] : positional;
-}
-
-function extractInPlaceEditTargets(cmd, args) {
-  let hasInPlace = false;
-  let sawExplicitExprOrScript = false;
-  const positional = [];
-
-  for (let i = 0; i < args.length; i += 1) {
-    const tok = args[i];
-    if (tok === "--") {
-      positional.push(...args.slice(i + 1).filter(Boolean));
-      break;
-    }
-    if (tok === "--in-place" || tok.startsWith("--in-place=")) {
-      hasInPlace = true;
-      continue;
-    }
-    if (tok.startsWith("-") && !tok.startsWith("--") && tok.length > 1) {
-      if (tok.includes("i")) {
-        hasInPlace = true;
-      }
-      if (
-        (cmd === "sed" && (tok === "-e" || tok === "-f" || /[ef]$/.test(tok))) ||
-        (cmd === "perl" && (tok === "-e" || tok === "-E" || /[eE]$/.test(tok)))
-      ) {
-        sawExplicitExprOrScript = true;
-        i += 1;
-      }
-      continue;
-    }
-    if (tok.startsWith("--expression=") || tok.startsWith("--file=")) {
-      sawExplicitExprOrScript = true;
-      continue;
-    }
-    if (!tok) continue;
-    positional.push(tok);
-  }
-
-  if (!hasInPlace) {
-    return [];
-  }
-  if (!sawExplicitExprOrScript && positional.length > 1) {
-    return positional.slice(1);
-  }
-  return positional;
-}
-
-function inspectCommandLine(commandLine, { workspaceRoot, activeSlice, depth = 0 } = {}) {
-  if (depth === 0) {
-    const guardResult = evaluateShellCommand(commandLine, {
-      root: workspaceRoot,
-      cwd: workspaceRoot,
-      respectOutside: false,
-      gitPushDecision: "deny",
-      gitPushForceDecision: "force_ask",
-      gitAskDecision: "force_ask",
-      sliceCheck:
-        activeSlice && workspaceRoot
-          ? (targetPath) => inspectSliceOwnership(targetPath, workspaceRoot, activeSlice)
-          : undefined,
-    });
-    if (guardResult.decision !== "allow") {
-      return guardResult;
-    }
-  }
-  if (!commandLine || typeof commandLine !== "string") {
-    return { decision: "allow" };
-  }
-
-  if (/:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/.test(commandLine)) {
-    return {
-      decision: "deny",
-      reason: "Blocked catastrophic shell fork bomb.",
-    };
-  }
-
-  if (/\bmkfs\.[A-Za-z0-9_-]+/.test(commandLine)) {
-    return {
-      decision: "deny",
-      reason: "Blocked catastrophic filesystem formatting command (mkfs).",
-    };
-  }
-
-  const segments = splitShellSegments(commandLine);
-  let forceAskReason = null;
-
-  for (const segment of segments) {
-    const tokens = stripCommandPrefixes(tokenizeShellSegment(segment));
-    if (tokens.length === 0) continue;
-
-    const cmd = path.posix.basename(tokens[0]);
-    const rest = tokens.slice(1);
-
-    // Unwrap shell wrapper commands (e.g., sh -c "...", bash -lc "...")
-    if (SHELL_WRAPPER_CMDS.has(cmd) && depth < 5) {
-      for (let i = 0; i < rest.length; i += 1) {
-        const tok = rest[i];
-        if (
-          tok === "-c" ||
-          (tok.startsWith("-") && !tok.startsWith("--") && tok.endsWith("c"))
-        ) {
-          const nestedCmd = rest[i + 1];
-          if (typeof nestedCmd === "string" && nestedCmd.trim()) {
-            const nested = inspectCommandLine(nestedCmd, {
-              workspaceRoot,
-              activeSlice,
-              depth: depth + 1,
-            });
-            if (nested.decision === "deny") {
-              return nested;
-            }
-            if (nested.decision === "force_ask" && !forceAskReason) {
-              forceAskReason = nested.reason;
-            }
-          }
-          break;
-        }
-      }
-    }
-
-    // Check output redirections (> or >>) targeting protected files (.factory/**, holdout/**, .env, keys, .git) or out-of-slice paths
-    for (let i = 0; i < tokens.length; i += 1) {
-      const tok = tokens[i];
-      let redirTarget = null;
-      if (tok === ">" || tok === ">>" || tok === "1>" || tok === "1>>" || tok === "&>" || tok === "&>>") {
-        redirTarget = tokens[i + 1] || null;
-      } else if (/^(?:1|&)?>>?.+/.test(tok)) {
-        redirTarget = tok.replace(/^(?:1|&)?>>?/, "");
-      }
-      if (redirTarget && !redirTarget.startsWith("&")) {
-        const denied = evaluateTargetPaths([redirTarget], { workspaceRoot, activeSlice });
-        if (denied) return denied;
-      }
-    }
-
-    // Check file-writing/deleting commands targeting .factory/**, holdout/**, or out-of-slice paths
-    if (
-      cmd === "rm" ||
-      cmd === "cp" ||
-      cmd === "mv" ||
-      cmd === "ln" ||
-      cmd === "tee" ||
-      cmd === "touch" ||
-      cmd === "truncate"
-    ) {
-      let argsToInspect;
-      if (cmd === "cp" || cmd === "ln") {
-        argsToInspect = extractTargetDirDestinations(rest);
-      } else if (cmd === "mv") {
-        const nonFlag = rest.filter((tok) => !tok.startsWith("-"));
-        argsToInspect = [...new Set([...nonFlag, ...extractTargetDirDestinations(rest)])];
-      } else {
-        argsToInspect = rest.filter((tok) => !tok.startsWith("-"));
-      }
-      const denied = evaluateTargetPaths(argsToInspect, { workspaceRoot, activeSlice });
-      if (denied) return denied;
-    }
-
-    if (cmd === "sed" || cmd === "perl") {
-      const inPlaceTargets = extractInPlaceEditTargets(cmd, rest);
-      const denied = evaluateTargetPaths(inPlaceTargets, { workspaceRoot, activeSlice });
-      if (denied) return denied;
-    }
-
-    if (cmd === "dd") {
-      const ddTargets = rest
-        .filter((tok) => tok.startsWith("of="))
-        .map((tok) => tok.slice(3))
-        .filter(Boolean);
-      const denied = evaluateTargetPaths(ddTargets, { workspaceRoot, activeSlice });
-      if (denied) return denied;
-    }
-
-    if (cmd === "rm") {
-      let hasRecursive = false;
-      let hasForce = false;
-      const targets = [];
-
-      for (const tok of rest) {
-        if (tok === "--recursive") {
-          hasRecursive = true;
-        } else if (tok === "--force") {
-          hasForce = true;
-        } else if (tok.startsWith("--")) {
-          continue;
-        } else if (tok.startsWith("-") && tok.length > 1) {
-          if (/[rR]/.test(tok)) hasRecursive = true;
-          if (/f/.test(tok)) hasForce = true;
-        } else {
-          targets.push(tok);
-        }
-      }
-
-      if (hasRecursive && hasForce) {
-        for (const target of targets) {
-          const normalizedTarget = normalizeRmTarget(target);
-          if (CATASTROPHIC_RM_TARGETS.has(normalizedTarget)) {
-            return {
-              decision: "deny",
-              reason: `Blocked catastrophic recursive delete targeting "${target}".`,
-            };
-          }
-        }
-      }
-    }
-
-    if (cmd === "git" && !forceAskReason) {
-      let subIdx = 0;
-      while (subIdx < rest.length) {
-        const tok = rest[subIdx];
-        if (GIT_OPTIONS_WITH_VALUE.has(tok)) {
-          subIdx += 2;
-          continue;
-        }
-        if (tok.startsWith("-")) {
-          subIdx += 1;
-          continue;
-        }
-        break;
-      }
-
-      const gitSubcmd = rest[subIdx];
-      const gitArgs = rest.slice(subIdx + 1);
-
-      if (gitSubcmd === "reset" && gitArgs.includes("--hard")) {
-        forceAskReason =
-          "Destructive Git operation (`git reset --hard`) discards uncommitted changes.";
-      } else if (
-        gitSubcmd === "push" &&
-        gitArgs.some(
-          (arg) =>
-            arg === "--force" ||
-            arg === "-f" ||
-            arg.startsWith("--force-with-lease")
-        )
-      ) {
-        forceAskReason =
-          "Force-pushing (`git push --force`) can overwrite remote history.";
-      } else if (
-        gitSubcmd === "clean" &&
-        gitArgs.some(
-          (arg) =>
-            arg === "--force" ||
-            (arg.startsWith("-") && !arg.startsWith("--") && arg.includes("f"))
-        )
-      ) {
-        forceAskReason =
-          "Destructive Git clean (`git clean -f`) permanently deletes untracked files.";
-      }
-    }
-  }
-
-  if (forceAskReason) {
-    return {
-      decision: "force_ask",
-      reason: forceAskReason,
-    };
-  }
-
-  return { decision: "allow" };
-}
-
-function globToRegExp(globPattern) {
-  let regexStr = "^";
-  for (let i = 0; i < globPattern.length; i += 1) {
-    const ch = globPattern[i];
-    if (ch === "*") {
-      if (globPattern[i + 1] === "*") {
-        if (globPattern[i + 2] === "/") {
-          regexStr += "(?:.+/)?";
-          i += 2;
-        } else {
-          regexStr += ".*";
-          i += 1;
-        }
-      } else {
-        regexStr += "[^/]*";
-      }
-    } else if (ch === "?") {
-      regexStr += "[^/]";
-    } else if ("\\.[]{}()+-^$|".includes(ch)) {
-      regexStr += `\\${ch}`;
-    } else {
-      regexStr += ch;
-    }
-  }
-  regexStr += "$";
-  return new RegExp(regexStr);
-}
-
-function matchesSlicePattern(relPath, allowedPatterns) {
-  const normFile = relPath.replace(/\\/g, "/").replace(/^\.\//, "");
-  for (const rawPattern of allowedPatterns) {
-    const pat = String(rawPattern).trim().replace(/\\/g, "/").replace(/^\.\//, "");
-    if (!pat) continue;
-    if (pat === "." || pat === "*" || pat === "**") return true;
-    if (pat.endsWith("/**") || pat.endsWith("/*")) {
-      const prefix = pat.replace(/\/\*+$/, "").replace(/\/+$/, "");
-      if (normFile === prefix || normFile.startsWith(`${prefix}/`)) return true;
-    }
-    if (pat.includes("*") || pat.includes("?")) {
-      if (globToRegExp(pat).test(normFile)) return true;
-      continue;
-    }
-    const cleanPrefix = pat.replace(/\/+$/, "");
-    if (normFile === cleanPrefix || normFile.startsWith(`${cleanPrefix}/`)) return true;
-  }
-  return false;
-}
-
-function inspectSliceOwnership(rawPath, workspaceRoot, sliceName) {
-  if (!sliceName || !rawPath || typeof rawPath !== "string") {
-    return { decision: "allow" };
-  }
+function loadGuardPolicyForRoot(workspaceRoot, activeSlice) {
   const resolvedRoot = path.resolve(workspaceRoot || process.cwd());
+  const frozen = [];
+
+  const planPath = path.join(resolvedRoot, ".factory", "plan.json");
+  const planRes = readJsonFileStrict(planPath);
+  if (planRes.error) {
+    return { error: planRes.error };
+  }
+  if (planRes.data) {
+    if (Array.isArray(planRes.data.frozen)) {
+      for (const f of planRes.data.frozen) {
+        if (typeof f === "string" && f.trim()) frozen.push(f.trim());
+      }
+    }
+    if (Array.isArray(planRes.data.holdout)) {
+      for (const h of planRes.data.holdout) {
+        if (typeof h === "string" && h.trim()) frozen.push(h.trim());
+      }
+    }
+  }
+
   let specPath = path.join(resolvedRoot, ".factory", "spec.json");
   if (!fs.existsSync(specPath)) {
     specPath = path.join(resolvedRoot, "factory-spec.json");
   }
-  if (!fs.existsSync(specPath)) {
-    return { decision: "allow" };
+  const specRes = readJsonFileStrict(specPath);
+  if (specRes.error) {
+    return { error: specRes.error };
   }
 
-  let spec;
-  try {
-    spec = JSON.parse(fs.readFileSync(specPath, "utf8"));
-  } catch {
-    return { decision: "allow" };
-  }
-
-  const sliceDef = spec?.slices?.[sliceName];
-  if (!sliceDef || !sliceDef.allowPaths) {
-    return { decision: "allow" };
-  }
-
-  const allowList = Array.isArray(sliceDef.allowPaths)
-    ? sliceDef.allowPaths
-    : String(sliceDef.allowPaths).split(",");
-
-  const absTarget = path.isAbsolute(rawPath)
-    ? path.resolve(rawPath)
-    : path.resolve(resolvedRoot, rawPath);
-
-  if (
-    absTarget !== resolvedRoot &&
-    !absTarget.startsWith(`${resolvedRoot}${path.sep}`)
-  ) {
-    return { decision: "allow" };
-  }
-
-  const relPath = path.relative(resolvedRoot, absTarget).split(path.sep).join("/");
-  if (!matchesSlicePattern(relPath, allowList)) {
+  let allowList = null;
+  if (specRes.data) {
+    if (Array.isArray(specRes.data.frozen)) {
+      for (const f of specRes.data.frozen) {
+        if (typeof f === "string" && f.trim()) frozen.push(f.trim());
+      }
+    }
+    if (activeSlice && Array.isArray(specRes.data.sharedPaths)) {
+      for (const s of specRes.data.sharedPaths) {
+        if (typeof s === "string" && s.trim()) frozen.push(s.trim());
+      }
+    }
+    if (activeSlice) {
+      const sliceDef = specRes.data.slices?.[activeSlice];
+      if (!sliceDef || typeof sliceDef !== "object") {
+        return {
+          error: `Unknown slice "${activeSlice}" in ${path.basename(specPath)}.`,
+        };
+      }
+      const normalized = normalizeAllowPathsList(sliceDef.allowPaths);
+      if (normalized.length === 0) {
+        return {
+          error: `Active slice "${activeSlice}" has empty allowPaths in ${path.basename(specPath)}.`,
+        };
+      }
+      allowList = normalized;
+    }
+  } else if (activeSlice) {
     return {
-      decision: "deny",
-      reason: `Blocked out-of-slice edit to "${relPath}" for active slice "${sliceName}" (allowed: ${allowList.join(", ")}).`,
+      error: `FACTORY_SLICE="${activeSlice}" is set but no factory spec exists in ${resolvedRoot}.`,
     };
   }
 
+  return {
+    ctx: frozen.length > 0 ? { frozen } : {},
+    allowList,
+  };
+}
+
+function checkSliceBoundary(relOrRaw, activeSlice, allowList) {
+  if (!activeSlice || !allowList) return { decision: "allow" };
+  const rel = String(relOrRaw || "")
+    .replace(/\\/g, "/")
+    .replace(/^\.\//, "");
+  const normalizedRel = rel === "." ? "" : rel;
+  if (!matchesAllowedPath(normalizedRel, allowList)) {
+    return {
+      decision: "deny",
+      reason: `Blocked out-of-slice edit to "${normalizedRel}" for active slice "${activeSlice}" (allowed: ${allowList.join(", ")}).`,
+    };
+  }
   return { decision: "allow" };
 }
 
@@ -709,22 +164,22 @@ export function evaluatePreToolUse(payload, { env = process.env } = {}) {
       return { decision: "allow" };
     }
 
-    // Antigravity provides toolCall.name and toolCall.args.
     const toolCall =
       payload.toolCall && typeof payload.toolCall === "object"
         ? payload.toolCall
         : null;
-    const toolName = String(
-      toolCall?.name ?? ""
-    );
+    const toolName = String(toolCall?.name ?? "");
     const args =
       (toolCall?.args && typeof toolCall.args === "object"
         ? toolCall.args
-        : null) ||
-      {};
+        : null) || {};
+
+    const activeSlice = env?.FACTORY_SLICE || payload.slice || null;
+    const workspaceRoots = collectWorkspaceRoots(payload);
+    const primaryRoot = workspaceRoots[0];
+    const effectiveCwd = path.resolve(payload.cwd || primaryRoot);
 
     const isFileWriteTool = toolName === "write_file" || toolName === "edit_file";
-
     if (isFileWriteTool) {
       const candidatePaths = [];
       const topPath =
@@ -752,23 +207,30 @@ export function evaluatePreToolUse(payload, { env = process.env } = {}) {
         }
       }
 
-      const activeSlice = env?.FACTORY_SLICE || payload.slice || null;
-      const workspaceRoot =
-        (Array.isArray(payload.workspacePaths) && payload.workspacePaths[0]) ||
-        payload.workspaceRoot ||
-        payload.cwd ||
-        process.cwd();
-
       for (const targetPath of candidatePaths) {
-        const fileDecision = inspectFileTarget(targetPath);
+        const targetRoot = pickWorkspaceRoot(
+          workspaceRoots,
+          targetPath,
+          effectiveCwd,
+        );
+        const loaded = loadGuardPolicyForRoot(targetRoot, activeSlice);
+        if (loaded.error) {
+          return { decision: "deny", reason: loaded.error };
+        }
+        const fileDecision = inspectTargetPath(targetPath, {
+          root: targetRoot,
+          cwd: effectiveCwd,
+          ctx: loaded.ctx,
+          respectOutside: false,
+        });
         if (fileDecision.decision !== "allow") {
           return fileDecision;
         }
-        if (activeSlice) {
-          const sliceDecision = inspectSliceOwnership(
-            targetPath,
-            workspaceRoot,
-            activeSlice
+        if (activeSlice && !fileDecision.outside && fileDecision.rel !== null) {
+          const sliceDecision = checkSliceBoundary(
+            fileDecision.rel,
+            activeSlice,
+            loaded.allowList,
           );
           if (sliceDecision.decision !== "allow") {
             return sliceDecision;
@@ -779,18 +241,30 @@ export function evaluatePreToolUse(payload, { env = process.env } = {}) {
       return { decision: "allow" };
     }
 
-    const isCommandTool = toolName === "run_command";
-
-    if (isCommandTool) {
+    if (toolName === "run_command") {
       const commandLine =
         args.CommandLine ?? args.commandLine ?? args.command ?? "";
-      const activeSlice = env?.FACTORY_SLICE || payload.slice || null;
-      const workspaceRoot =
-        (Array.isArray(payload.workspacePaths) && payload.workspacePaths[0]) ||
-        payload.workspaceRoot ||
-        payload.cwd ||
-        process.cwd();
-      return inspectCommandLine(commandLine, { workspaceRoot, activeSlice });
+      const cmdCwd = path.resolve(
+        args.Cwd ?? args.cwd ?? effectiveCwd ?? primaryRoot,
+      );
+      const targetRoot = pickWorkspaceRoot(workspaceRoots, cmdCwd, cmdCwd);
+      const loaded = loadGuardPolicyForRoot(targetRoot, activeSlice);
+      if (loaded.error) {
+        return { decision: "deny", reason: loaded.error };
+      }
+      return evaluateShellCommand(commandLine, {
+        root: targetRoot,
+        cwd: cmdCwd,
+        ctx: loaded.ctx,
+        respectOutside: false,
+        gitPushDecision: "force_ask",
+        gitPushForceDecision: "force_ask",
+        gitAskDecision: "force_ask",
+        sliceCheck: activeSlice
+          ? (relOrRaw) =>
+              checkSliceBoundary(relOrRaw, activeSlice, loaded.allowList)
+          : undefined,
+      });
     }
 
     return { decision: "allow" };

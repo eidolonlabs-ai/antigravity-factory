@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { detectProject } from "./detect.js";
-import { loadFactoryPolicy, hash } from "./policy.js";
+import { loadFactoryPolicy, hash, within } from "./policy.js";
 import { writeRecord } from "./records.js";
 import { snapshotWorkspace } from "./workspace.js";
 
@@ -51,36 +51,86 @@ export function computeWorkspaceDigest(cwd = process.cwd()) {
   return snapshotWorkspace(cwd).digest;
 }
 
-function gitignoreCoversEnv(gitignorePath) {
+const HYGIENE_SKIP_DIRS = new Set([
+  ".git",
+  ".factory",
+  "node_modules",
+  "dist",
+  "build",
+  "coverage",
+  "__pycache__",
+]);
+
+function isEnvSecretBasename(baseName) {
+  const lower = baseName.toLowerCase();
+  if (ALLOWED_ENV_TEMPLATES.has(lower)) return false;
+  return lower === ".env" || lower.startsWith(".env.");
+}
+
+function gitignoreCoversEnv(gitignorePath, relPath = ".env") {
   if (!fs.existsSync(gitignorePath) || !fs.statSync(gitignorePath).isFile()) {
     return false;
   }
+  const baseName = path.posix.basename(relPath);
+  const isRoot = !relPath.includes("/");
   const lines = fs.readFileSync(gitignorePath, "utf8").split(/\r?\n/);
   let ignored = false;
   for (const raw of lines) {
     const line = raw.trim();
     if (!line || line.startsWith("#")) continue;
+    if (line === `!.env` || line === `!/.env` || line === `!${baseName}` || line === `!${relPath}`) {
+      ignored = false;
+      continue;
+    }
     if (
-      line === ".env" ||
-      line === "/.env" ||
       line === ".env*" ||
-      line === "/.env*" ||
-      line === "*.env" ||
-      line === "**/.env"
+      line === "**/.env*" ||
+      (isRoot && line === "/.env*") ||
+      (baseName === ".env" &&
+        (line === ".env" ||
+          line === "**/.env" ||
+          line === "*.env" ||
+          (isRoot && line === "/.env"))) ||
+      (baseName !== ".env" &&
+        (line === ".env.*" ||
+          line === "**/.env.*" ||
+          line === baseName ||
+          line === relPath ||
+          (isRoot && (line === "/.env.*" || line === `/${baseName}`))))
     ) {
       ignored = true;
-    } else if (line === "!.env" || line === "!/.env") {
-      ignored = false;
     }
   }
   return ignored;
 }
 
+function findEnvFiles(rootDir, currentDir = rootDir, acc = []) {
+  const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) continue;
+    if (entry.isDirectory()) {
+      if (HYGIENE_SKIP_DIRS.has(entry.name)) continue;
+      findEnvFiles(rootDir, path.join(currentDir, entry.name), acc);
+    } else if (entry.isFile() && isEnvSecretBasename(entry.name)) {
+      acc.push(
+        path.relative(rootDir, path.join(currentDir, entry.name)).split(path.sep).join("/"),
+      );
+    }
+  }
+  return acc;
+}
+
 function isSensitiveTrackedFile(relFilePath) {
-  const base = path.posix.basename(relFilePath.replace(/\\/g, "/"));
+  const base = path.posix.basename(relFilePath.replace(/\\/g, "/")).toLowerCase();
   if (ALLOWED_ENV_TEMPLATES.has(base)) return false;
   if (base === ".env" || base.startsWith(".env.")) return true;
-  if (base === "id_rsa" || base === "id_ed25519") return true;
+  if (
+    base === "id_rsa" ||
+    base === "id_ed25519" ||
+    base === "id_ecdsa" ||
+    base === "id_dsa"
+  )
+    return true;
   if (base.endsWith(".pem") || base.endsWith(".key")) return true;
   return false;
 }
@@ -90,17 +140,17 @@ function runHygieneCheck(resolvedCwd) {
   const issues = [];
 
   const inGitWorkTree = isGitWorkTree(resolvedCwd);
-
-  const envPath = path.join(resolvedCwd, ".env");
   const gitignorePath = path.join(resolvedCwd, ".gitignore");
-  if (fs.existsSync(envPath) && fs.statSync(envPath).isFile()) {
+  const envFiles = findEnvFiles(resolvedCwd).sort();
+
+  for (const relEnv of envFiles) {
     const isIgnoredByGit =
       inGitWorkTree &&
-      runGit(["check-ignore", "-q", "--no-index", ".env"], resolvedCwd)
+      runGit(["check-ignore", "-q", "--no-index", "--", relEnv], resolvedCwd)
         .status === 0;
-    if (!gitignoreCoversEnv(gitignorePath) && !isIgnoredByGit) {
+    if (!isIgnoredByGit && !gitignoreCoversEnv(gitignorePath, relEnv)) {
       issues.push(
-        ".env exists in workspace without a .gitignore entry ignoring .env",
+        `${relEnv} exists in workspace without a .gitignore entry ignoring it`,
       );
     }
   }
@@ -196,7 +246,9 @@ function ensureNodeDependenciesIfNeeded(
   component,
   resolvedCwd,
   baseEnv = process.env,
+  { autoInstall = baseEnv.FACTORY_AUTO_INSTALL === "1" } = {},
 ) {
+  if (!autoInstall) return null;
   if (component.type !== "node") return null;
   const pkgPath = path.join(component.path, "package.json");
   if (!fs.existsSync(pkgPath)) return null;
@@ -258,9 +310,68 @@ function ensureNodeDependenciesIfNeeded(
   return null;
 }
 
-export function inspectComposeIsolation(resolvedModel) {
+function isExternalComposePath(rawSrc, realRoot) {
+  if (!rawSrc || typeof rawSrc !== "string") return false;
+  if (rawSrc.startsWith("~") || rawSrc.split(/[\\/]/).includes("..")) {
+    return true;
+  }
+  if (!realRoot) {
+    return (
+      rawSrc.startsWith("/etc") ||
+      rawSrc.startsWith("/var") ||
+      rawSrc.startsWith("/run") ||
+      rawSrc.startsWith("/dev") ||
+      rawSrc.startsWith("/root")
+    );
+  }
+  const absCandidate = path.isAbsolute(rawSrc)
+    ? path.resolve(rawSrc)
+    : path.resolve(realRoot, rawSrc);
+  let resolved = absCandidate;
+  try {
+    if (fs.existsSync(absCandidate)) {
+      resolved = fs.realpathSync(absCandidate);
+    } else if (fs.existsSync(path.dirname(absCandidate))) {
+      resolved = path.join(
+        fs.realpathSync(path.dirname(absCandidate)),
+        path.basename(absCandidate),
+      );
+    }
+  } catch {
+    return true;
+  }
+  return !within(realRoot, resolved);
+}
+
+export function inspectComposeIsolation(resolvedModel, { workspaceRoot } = {}) {
   const problems = [];
   const services = resolvedModel?.services;
+  const realRoot = workspaceRoot
+    ? (() => {
+        try {
+          return fs.realpathSync(workspaceRoot);
+        } catch {
+          return path.resolve(workspaceRoot);
+        }
+      })()
+    : null;
+
+  const topVolumes = resolvedModel?.volumes;
+  if (topVolumes && typeof topVolumes === "object") {
+    for (const [volName, volCfg] of Object.entries(topVolumes)) {
+      const opts = volCfg?.driver_opts;
+      if (opts && typeof opts === "object") {
+        const device = String(opts.device || "");
+        const o = String(opts.o || "");
+        if (device.includes("docker.sock") || o.includes("docker.sock")) {
+          problems.push(`volume ${volName}: docker.sock driver_opts is not allowed`);
+        } else if (device && isExternalComposePath(device, realRoot)) {
+          problems.push(`volume ${volName}: external device bind "${device}" escapes workspace`);
+        }
+      }
+    }
+  }
+
   if (!services || typeof services !== "object") return problems;
   for (const [name, svc] of Object.entries(services)) {
     if (!svc || typeof svc !== "object") continue;
@@ -270,54 +381,153 @@ export function inspectComposeIsolation(resolvedModel) {
     if (svc.privileged) {
       problems.push(`${name}: privileged containers are not allowed`);
     }
+    for (const hostKey of ["pid", "ipc", "uts", "cgroup", "userns_mode"]) {
+      const val = svc[hostKey];
+      if (
+        val === "host" ||
+        (typeof val === "string" && val.startsWith("container:"))
+      ) {
+        problems.push(
+          `${name}: ${hostKey} "${val}" namespace sharing is not allowed`,
+        );
+      }
+    }
+    if (
+      svc.network_mode === "host" ||
+      (typeof svc.network_mode === "string" && svc.network_mode.startsWith("container:"))
+    ) {
+      problems.push(`${name}: network_mode "${svc.network_mode}" is not allowed`);
+    }
+    if (Array.isArray(svc.cap_add) && svc.cap_add.length > 0) {
+      problems.push(`${name}: cap_add (${svc.cap_add.join(", ")}) is not allowed`);
+    }
+    if (Array.isArray(svc.security_opt)) {
+      for (const opt of svc.security_opt) {
+        if (/unconfined|label[:=]disable/i.test(String(opt))) {
+          problems.push(`${name}: unsafe security_opt "${opt}" is not allowed`);
+        }
+      }
+    }
+    if (Array.isArray(svc.devices) && svc.devices.length > 0) {
+      problems.push(`${name}: host devices mapping is not allowed`);
+    }
+    if (Array.isArray(svc.volumes_from) && svc.volumes_from.length > 0) {
+      problems.push(`${name}: volumes_from is not allowed`);
+    }
+    if (realRoot && svc.build) {
+      const ctx = typeof svc.build === "string" ? svc.build : svc.build?.context;
+      if (typeof ctx === "string" && !/^https?:\/\//i.test(ctx) && isExternalComposePath(ctx, realRoot)) {
+        problems.push(`${name}: build context "${ctx}" escapes workspace`);
+      }
+    }
+    const envFiles = Array.isArray(svc.env_file)
+      ? svc.env_file
+      : svc.env_file
+        ? [svc.env_file]
+        : [];
+    for (const ef of envFiles) {
+      const efPath = typeof ef === "string" ? ef : ef?.path;
+      if (typeof efPath === "string" && isExternalComposePath(efPath, realRoot)) {
+        problems.push(`${name}: env_file "${efPath}" escapes workspace`);
+      }
+    }
     for (const vol of Array.isArray(svc.volumes) ? svc.volumes : []) {
-      const src =
-        typeof vol === "string" ? vol.split(":")[0] : String(vol?.source || "");
+      const isObj = vol && typeof vol === "object";
+      const src = isObj ? String(vol.source || "") : String(vol).split(":")[0];
       if (src.includes("docker.sock")) {
         problems.push(`${name}: mounting docker.sock is not allowed (${src})`);
+        continue;
+      }
+      const isBind =
+        (isObj && vol.type === "bind") ||
+        (!isObj &&
+          (src.startsWith("/") ||
+            src.startsWith(".") ||
+            src.startsWith("~") ||
+            src.includes("/") ||
+            src.includes("\\")));
+      if (isBind && isExternalComposePath(src, realRoot)) {
+        problems.push(`${name}: bind mount "${src}" escapes workspace`);
       }
     }
   }
   return problems;
 }
 
+function runComposeSubcommand(args, cwd, timeoutMs, baseEnv) {
+  const start = Date.now();
+  const res = spawnSync("docker", args, {
+    cwd,
+    encoding: "utf8",
+    timeout: timeoutMs,
+    maxBuffer: 10 * 1024 * 1024,
+    env: baseEnv,
+  });
+  const durationMs = Date.now() - start;
+  const combined = [res.stdout || "", res.stderr || ""]
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+  return {
+    ok: res.status === 0 && !res.error,
+    durationMs,
+    stdout: (res.stdout || "").trim(),
+    output: combined.length > 4000 ? combined.slice(-4000) : combined,
+  };
+}
+
 function runDockerComposeCheck(project, resolvedCwd, env) {
-  const cmd = "docker compose config --quiet";
-  const res = execShellCommand(cmd, resolvedCwd, 30_000, env);
+  const composeFile = project.dockerComposeFile;
+  const cmdDisplay = `docker compose -f ${composeFile} config --quiet`;
+  const res = runComposeSubcommand(
+    ["compose", "-f", composeFile, "config", "--quiet"],
+    resolvedCwd,
+    30_000,
+    env,
+  );
   if (!res.ok) {
     return {
       id: "docker-compose",
       category: "docker-compose",
       component: "workspace",
       status: "FAIL",
-      command: cmd,
+      command: cmdDisplay,
       durationMs: res.durationMs,
       output: res.output || "docker compose config failed.",
     };
   }
-  const jsonRes = execShellCommand(
-    "docker compose config --format json",
+  const jsonRes = runComposeSubcommand(
+    ["compose", "-f", composeFile, "config", "--format", "json"],
     resolvedCwd,
     30_000,
     env,
   );
-  if (jsonRes.ok && jsonRes.output) {
+  if (jsonRes.ok) {
+    let model;
     try {
-      const model = JSON.parse(jsonRes.output);
-      const problems = inspectComposeIsolation(model);
-      if (problems.length > 0) {
-        return {
-          id: "docker-compose",
-          category: "docker-compose",
-          component: "workspace",
-          status: "FAIL",
-          command: "docker compose config --format json",
-          durationMs: res.durationMs + jsonRes.durationMs,
-          output: `Compose isolation violation(s): ${problems.join("; ")}`,
-        };
-      }
+      model = JSON.parse(jsonRes.stdout || jsonRes.output);
     } catch {
-      // Non-JSON compose output (e.g. legacy CLI or stub): syntax check already passed.
+      return {
+        id: "docker-compose",
+        category: "docker-compose",
+        component: "workspace",
+        status: "FAIL",
+        command: `docker compose -f ${composeFile} config --format json`,
+        durationMs: res.durationMs + jsonRes.durationMs,
+        output: "Invalid JSON output from docker compose config --format json",
+      };
+    }
+    const problems = inspectComposeIsolation(model, { workspaceRoot: resolvedCwd });
+    if (problems.length > 0) {
+      return {
+        id: "docker-compose",
+        category: "docker-compose",
+        component: "workspace",
+        status: "FAIL",
+        command: `docker compose -f ${composeFile} config --format json`,
+        durationMs: res.durationMs + jsonRes.durationMs,
+        output: `Compose isolation violation(s): ${problems.join("; ")}`,
+      };
     }
   }
   return {
@@ -325,7 +535,7 @@ function runDockerComposeCheck(project, resolvedCwd, env) {
     category: "docker-compose",
     component: "workspace",
     status: "PASS",
-    command: cmd,
+    command: cmdDisplay,
     durationMs: res.durationMs,
     output: res.output || `${project.dockerComposeFile} is valid.`,
   };
@@ -468,14 +678,12 @@ export function runVerify({
     });
   }
   for (const required of policy.verification.requiredChecks) {
-    if (
-      !checks.some(
-        (c) =>
-          c.componentPath === required.component &&
-          c.category === required.category &&
-          c.status === "PASS",
-      )
-    ) {
+    const matching = checks.filter(
+      (c) =>
+        c.componentPath === required.component &&
+        c.category === required.category,
+    );
+    if (matching.length === 0 || matching.some((c) => c.status !== "PASS")) {
       checks.push({
         id: `required:${required.component}:${required.category}`,
         component: required.component,

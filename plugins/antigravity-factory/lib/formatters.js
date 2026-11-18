@@ -1,3 +1,15 @@
+import fs from 'node:fs';
+
+const PLUGIN_VERSION = (() => {
+  try {
+    return JSON.parse(
+      fs.readFileSync(new URL('../plugin.json', import.meta.url), 'utf8')
+    ).version || '1.1.0';
+  } catch {
+    return '1.1.0';
+  }
+})();
+
 const SARIF_RULES = {
   'hardcoded-secret': {
     id: 'hardcoded-secret',
@@ -87,7 +99,7 @@ export function formatAuditSarif(report) {
           driver: {
             name: 'agy-factory',
             informationUri: 'https://github.com/eidolonlabs-ai/antigravity-factory',
-            version: '1.0.0',
+            version: PLUGIN_VERSION,
             rules: Object.values(SARIF_RULES),
           },
         },

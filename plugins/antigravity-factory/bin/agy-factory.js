@@ -328,9 +328,26 @@ export function runCli(
     return 0;
   }
 
+  if (
+    (subcommand === "evidence" && positionals.length > 2) ||
+    (subcommand === "twin" && positionals.length > 1) ||
+    (subcommand !== "evidence" &&
+      (positionals.length > 2 || (values.cwd && positionals.length > 1)))
+  ) {
+    const extraStart =
+      subcommand === "twin" || (subcommand !== "evidence" && values.cwd) ? 1 : 2;
+    err(
+      `Error: Unexpected positional argument(s): ${positionals.slice(extraStart).join(" ")}`,
+    );
+    err("Run `agy-factory --help` for usage.");
+    return ["status", "evidence"].includes(subcommand) ? 2 : 1;
+  }
+
   const effectiveCwd =
     values.cwd ||
-    (subcommand === "evidence" ? null : positionals[1]) ||
+    (subcommand === "evidence" || subcommand === "twin"
+      ? null
+      : positionals[1]) ||
     process.cwd();
 
   try {
@@ -367,7 +384,7 @@ export function runCli(
       }
       case "detect": {
         const result = detectProject(effectiveCwd);
-        if (values.json) {
+        if (values.json || values.format === "json") {
           out(JSON.stringify(result, null, 2));
         } else {
           out(formatDetectHuman(result));
