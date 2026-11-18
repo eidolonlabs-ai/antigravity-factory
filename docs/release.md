@@ -5,8 +5,8 @@ The canonical source is `plugins/agy-software-factory/`. Keep its supported mani
 ## Repository installation
 
 ```sh
-git clone https://github.com/theRealMarkCastillo/agy-software-factory.git
-cd agy-software-factory
+git clone https://github.com/theRealMarkCastillo/antigravity-harness.git
+cd antigravity-harness
 agy plugin validate ./plugins/agy-software-factory --strict
 agy plugin install ./plugins/agy-software-factory
 agy plugin list

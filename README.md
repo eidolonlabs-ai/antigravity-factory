@@ -1,9 +1,9 @@
-# Antigravity Software Factory (`agy-software-factory`)
+# Antigravity Harness
 
-[![Software Factory CI](https://github.com/theRealMarkCastillo/agy-software-factory/actions/workflows/ci.yml/badge.svg)](https://github.com/theRealMarkCastillo/agy-software-factory/actions/workflows/ci.yml)
+[![Software Factory CI](https://github.com/theRealMarkCastillo/antigravity-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/theRealMarkCastillo/antigravity-harness/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Software Factory** is a local **Antigravity plugin harness for solo developers**, with a portable, zero-dependency Node.js CLI. It uses Antigravity's native agents, delegation, browser operation and lifecycle controls, adding repeatable workflows, scope guardrails and verification evidence. Its structured interfaces can later serve a larger team factory.
+**Antigravity Harness** is a local development harness for solo developers, with a portable, zero-dependency Node.js CLI. It uses Antigravity's native agents, delegation, browser operation and lifecycle controls, adding repeatable workflows, scope guardrails and verification evidence. Its structured interfaces can later serve a larger team factory.
 
 It pairs **probabilistic agent skills** (specification planning, isolated parallel swarm/worktree authoring, browser/E2E testing, and semantic code review) with **deterministic runtime gates** (stack detection, test/build verification with SHA-256 freshness receipts, `file:line` diff security scanning, and `PreToolUse` / `Stop` lifecycle hooks).
 
@@ -13,7 +13,7 @@ It pairs **probabilistic agent skills** (specification planning, isolated parall
 
 Prompt-only workflows fail silently at scale: parallel workers step on the same files, missing test scripts get misreported as "green", security sinks slip into large diffs, and agents stop before running verification. Purely rigid scripts, on the other hand, cannot decompose product requirements, author full-stack slices, or reason about subtle semantic bugs.
 
-`agy-software-factory` separates what LLMs do best from what deterministic code must enforce:
+The harness separates what LLMs do best from what deterministic code must enforce:
 
 | Concern | Probabilistic Layer (Skills & Rules) | Deterministic Layer (CLI & Lifecycle Hooks) |
 | :--- | :--- | :--- |
@@ -311,9 +311,9 @@ Runs [stop-verify-gate.js](plugins/agy-software-factory/bin/stop-verify-gate.js)
 
 ## Using This Repository as a GitHub Template
 
-Click **Use this template** on GitHub to start a new repository with the Antigravity Software Factory pre-wired:
+Clone the repository to try the harness, or copy it into a new repository to start a project. If your GitHub copy is configured as a template, you can also use **Use this template**.
 
-1. **Create & clone your new repository** from this template.
+1. Clone or create your project repository.
 2. *(Optional)* Remove the reference demo app once you no longer need it:
    ```bash
    rm -rf examples/task-tracker

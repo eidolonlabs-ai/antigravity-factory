@@ -1,6 +1,6 @@
-# Software Factory Workspace & Contributor Rules
+# Antigravity Harness contributor rules
 
-This repository develops and ships **Antigravity Software Factory** (`agy-software-factory`), a portable plugin, deterministic Node.js CLI, and multi-agent workflow suite for **Antigravity**. Follow both the five Software Factory rules and the repository contributor constraints below on every change.
+This repository develops and ships **Antigravity Harness** (plugin ID `agy-software-factory`), a portable plugin, deterministic Node.js CLI, and multi-agent workflow suite for **Antigravity**. Follow both the five Software Factory rules and the repository contributor constraints below on every change.
 
 ## Software Factory Rules
 

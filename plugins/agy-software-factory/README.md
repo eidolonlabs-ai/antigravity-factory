@@ -1,4 +1,4 @@
-# Software Factory for Antigravity
+# Antigravity Harness plugin
 
 A local plugin harness for solo developers. Antigravity supplies agents, delegation, browser operation and permissions. This bundle supplies delivery skills, tool guardrails, deterministic verification, evidence records and safe worktree integration. A larger factory can later call the same CLI.
 

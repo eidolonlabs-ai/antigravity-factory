@@ -5,8 +5,8 @@
   "description": "Local development harness for Antigravity with project verification, scope guardrails, review evidence, and safe worktree integration.",
   "logo": "assets/logo.svg",
   "author": "Mark Castillo",
-  "homepage": "https://github.com/theRealMarkCastillo/agy-software-factory",
-  "repository": "https://github.com/theRealMarkCastillo/agy-software-factory",
+  "homepage": "https://github.com/theRealMarkCastillo/antigravity-harness",
+  "repository": "https://github.com/theRealMarkCastillo/antigravity-harness",
   "suggestedPrompts": [
     "Build a new feature end-to-end using the Software Factory pipeline",
     "Run deterministic QA verification across all workspace components",

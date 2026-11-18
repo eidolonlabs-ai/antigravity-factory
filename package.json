@@ -4,10 +4,10 @@
   "description": "Local Antigravity plugin harness with deterministic verification and portable factory interfaces",
   "license": "MIT",
   "author": "Mark Castillo",
-  "homepage": "https://github.com/theRealMarkCastillo/agy-software-factory",
+  "homepage": "https://github.com/theRealMarkCastillo/antigravity-harness",
   "repository": {
     "type": "git",
-    "url": "https://github.com/theRealMarkCastillo/agy-software-factory.git"
+    "url": "https://github.com/theRealMarkCastillo/antigravity-harness.git"
   },
   "type": "module",
   "bin": {
